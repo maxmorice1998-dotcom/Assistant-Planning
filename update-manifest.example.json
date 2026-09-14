@@ -1,0 +1,8 @@
+{
+  "version": "1.0.1",
+  "downloadUrl": "https://example.invalid/Assistant-Planning-1.0.1.zip",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "notes": "Notes de version",
+  "signatureAlgorithm": "RSA-SHA256",
+  "signature": ""
+}

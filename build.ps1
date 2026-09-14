@@ -1,0 +1,18 @@
+$ErrorActionPreference='Stop'
+$versionPath=Join-Path $PSScriptRoot 'app-version.json'
+if(-not(Test-Path -LiteralPath $versionPath)){throw 'Fichier app-version.json absent.'}
+$versionText=[IO.File]::ReadAllText($versionPath,[Text.Encoding]::UTF8).TrimStart([char]0xFEFF)
+$versionData=$versionText | ConvertFrom-Json
+$version=([string]$versionData.version).Trim()
+if(-not $version){throw 'Version applicative absente.'}
+$buildStamp=(Get-Date).ToString('o')
+$versionJson = [ordered]@{version=$version;build=$buildStamp} | ConvertTo-Json
+[IO.File]::WriteAllText($versionPath,$versionJson,(New-Object Text.UTF8Encoding($false)))
+$compiler=Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if(-not(Test-Path -LiteralPath $compiler)){throw 'Compilateur Windows absent.'}
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll /out:"$PSScriptRoot\SDIS-Collegues.exe" "$PSScriptRoot\SDIS-Collegues.cs"
+if($LASTEXITCODE -ne 0){throw 'Compilation impossible.'}
+& $compiler /nologo /target:exe /platform:x64 /optimize+ /codepage:65001 /reference:System.Security.dll /out:"$PSScriptRoot\SDIS-Collegues-Bridge.exe" "$PSScriptRoot\SDIS-Collegues-Bridge.cs"
+if($LASTEXITCODE -ne 0){throw 'Compilation du pont DPAPI impossible.'}
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /out:"$PSScriptRoot\AssistantPlanning-Updater.exe" "$PSScriptRoot\AssistantPlanning-Updater.cs"
+if($LASTEXITCODE -ne 0){throw 'Compilation de l''interface de mise a jour impossible.'}

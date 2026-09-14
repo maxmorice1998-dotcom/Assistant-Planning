@@ -1,0 +1,52 @@
+# Données et secrets locaux
+secrets/
+*.dpapi
+google-oauth-diagnostic.json
+google-calendar.json
+token.json
+credentials.json
+client_secret*.json
+google-desktop-oauth.json
+google-oauth-desktop.json
+google-oauth-config.json
+oauth-secrets/
+
+# Artefacts de mise à jour et clés de signature locales
+update-*.zip
+.assistant-planning-update-*/
+manifest-public-key.pem
+
+# Profils et journaux locaux
+profiles/
+logs/
+*.log
+
+## Builds et runtimes
+node_modules/
+runtime/
+*.exe
+AssistantPlanning-update.zip
+AssistantPlanning-Updater-Bootstrap.zip
+AssistantPlanning-update.previous-*.zip
+
+## Temporaires
+.binding-*/
+.google-clean-*/
+.installer-test-*/
+.rollback-local-*/
+.simulate-check/
+.t-*/
+.ui-clean-*/
+.update-stage-*/
+diagnostic-dendreo-backup/
+*.png
+*-result.json
+v1.0.3-*.json
+v1.0.3-*.txt
+dendreo-dry-run-result.txt
+
+## Configuration locale
+update-config.json
+alert.json
+browser-callback-diagnostic.json
+google-first-run-result.json
