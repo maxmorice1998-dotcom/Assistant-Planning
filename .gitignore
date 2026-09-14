@@ -50,3 +50,7 @@ update-config.json
 alert.json
 browser-callback-diagnostic.json
 google-first-run-result.json
+
+# Staging et outils temporaires
+.update-release-staging/
+tools/npm/
