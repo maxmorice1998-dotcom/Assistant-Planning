@@ -8,12 +8,20 @@ if (testDir && !path.resolve(testDir).startsWith(root + path.sep)) throw new Err
 const dataDir = testDir || path.join(process.env.LOCALAPPDATA || "", "SDIS-Bot-Collegues");
 if (!process.env.LOCALAPPDATA && !testDir) throw new Error("Profil Windows indisponible.");
 const ports = Object.freeze({agatt:19222, dendreo:19223});
+let cachedBrowserExecutable;
 function dataPath(name) {
  if (path.basename(name)!==name) throw new Error("Nom de fichier invalide.");
  return path.join(dataDir,name);
 }
 function parseJson(text) {
  return JSON.parse(String(text).replace(/^\uFEFF/,""));
+}
+function mergeOAuthTokens(previous,incoming){
+ const merged={...(previous||{})};
+ for(const [key,value] of Object.entries(incoming||{})){if(value!==undefined&&value!==null&&value!=="")merged[key]=value;}
+ if(!merged.refresh_token&&previous&&previous.refresh_token)merged.refresh_token=previous.refresh_token;
+ if(!merged.scope&&previous&&previous.scope)merged.scope=previous.scope;
+ return merged;
 }
 function writeJson(name,value) {
  const target=dataPath(name), tmp=target+"."+process.pid+".tmp";
@@ -52,7 +60,11 @@ function bridge(mode,input){
 }
 function saveSecret(name,value){
  initialize();
- if(name==="google-token")value=JSON.stringify({...parseJson(value),_oauthClientId:readProgramJson("google-oauth-config.json",{}).clientId});
+ if(name==="google-token"){
+  const incoming=parseJson(value);let previous={};
+  if(hasSecret(name)){try{previous=parseJson(secret(name));}catch{} }
+  value=JSON.stringify({...mergeOAuthTokens(previous,incoming),_oauthClientId:readProgramJson("google-oauth-config.json",{}).clientId});
+ }
  const encrypted=bridge("--protect",value);
  const target=secretPath(name),tmp=target+"."+process.pid+".tmp";
  fs.writeFileSync(tmp,encrypted,"utf8");fs.renameSync(tmp,target);
@@ -112,10 +124,11 @@ async function resolveCalendarId(api){
 function alert(){initialize();const value=readJson("alert.json",{});delete value.smtpPass;return value;}
 function smtpPassword(){return secret("smtp");}
 function bindGoogleAuth(auth){
- auth.on("tokens",fresh=>{const previous=token();saveSecret("google-token",JSON.stringify({...previous,...fresh}));});
+ auth.on("tokens",fresh=>{try{const previous=token();saveSecret("google-token",JSON.stringify(mergeOAuthTokens(previous,fresh)));}catch{} });
  return auth;
 }
 function browserExe(){
+ if(cachedBrowserExecutable)return cachedBrowserExecutable;
  const bundled=path.join(root,"runtime","browser");
  function find(dir,depth=0){
   if(depth>5||!fs.existsSync(dir))return null;
@@ -125,7 +138,7 @@ function browserExe(){
    if(entry.isDirectory()){const found=find(file,depth+1);if(found)return found;}
   }
  }
- const found=find(bundled);if(found)return found;
+ const found=find(bundled);if(found){cachedBrowserExecutable=found;return found;}
  throw new Error("Navigateur absent du package. Demandez une version complète au distributeur.");
 }
 function verifyBrowser(kind) {
@@ -141,5 +154,5 @@ function prepare(){
  if(prepared)return;prepared=true;initialize();process.chdir(dataDir);
 
 }
-module.exports={root,dataDir,ports,dataPath,parseJson,readJson,readProgramJson,writeJson,initialize,config,profile,saveSecret,secret,
+module.exports={root,dataDir,ports,dataPath,parseJson,mergeOAuthTokens,readJson,readProgramJson,writeJson,initialize,config,profile,saveSecret,secret,
  hasSecret,oauthConfigured,credentials,token,calendarId,resolveCalendarId,alert,smtpPassword,bindGoogleAuth,browserExe,verifyBrowser,prepare};

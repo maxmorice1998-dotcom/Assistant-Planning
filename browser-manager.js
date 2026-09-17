@@ -4,13 +4,44 @@ const fs=require("fs");
 const net=require("net");
 const {spawn,spawnSync}=require("child_process");
 const urls={agatt:"https://agatt.sdis14.fr/register/index.php?a=gardeExercice",dendreo:"https://formation.pompiers-14.org/"};
+const stateFile="connection-status.json";
+function readConnectionState(kind){
+ try{const value=rt.readJson(stateFile,{});const item=value&&value[kind];return item&&typeof item.connected==="boolean"?item:null;}catch{return null;}
+}
+function writeConnectionState(kind,connected,reason){
+ try{const value=rt.readJson(stateFile,{});value[kind]={connected:Boolean(connected),reason:String(reason||""),at:new Date().toISOString()};rt.writeJson(stateFile,value);}catch{}
+}
+function reportStatus(kind,status){
+ const state=readConnectionState(kind);
+ if(status.connected===true||status.reconnect===true&&status.reason!=="browser_unavailable")writeConnectionState(kind,status.connected===true,status.reason);
+ const cached=readConnectionState(kind);
+ if(status.reason==="browser_unavailable"&&cached&&cached.connected===true){
+  status={...status,connected:true,reconnect:false,temporary:true,reason:"browser_closed_last_confirmed"};
+ }
+ if(status.temporary===true&&cached&&cached.connected===true){
+  status={...status,connected:true,reconnect:false,reason:status.reason||"temporary_error_last_confirmed"};
+ }
+ try{const label=kind.toUpperCase();const detail=String(status.reason||"");const line=label+" status -> "+(status.connected===true?"connected":(status.reconnect===true?"disconnected":"unknown"))+(detail?" ("+detail+")":"");rt.initialize();fs.appendFileSync(rt.dataPath("assistant-planning.log"),line+"\n","utf8");}catch{}
+ return status;
+}
 async function occupied(port){
  return new Promise(resolve=>{const sock=net.connect({host:"127.0.0.1",port});
- sock.setTimeout(1000);sock.on("connect",()=>{sock.destroy();resolve(true);});
+ sock.setTimeout(300);sock.on("connect",()=>{sock.destroy();resolve(true);});
  sock.on("error",()=>resolve(false));sock.on("timeout",()=>{sock.destroy();resolve(false);});});
 }
+async function waitForPort(port,timeoutMs=15000){
+ const deadline=Date.now()+timeoutMs;
+ while(Date.now()<deadline){if(await occupied(port))return true;await new Promise(r=>setTimeout(r,200));}
+ return false;
+}
 function psQuote(value){return "'"+String(value).replace(/'/g,"''")+"'";}
-function focusDedicatedWindow(kind){
+function normalizeWindowBounds(value){
+ const b=value&&typeof value==='object'?value:{};
+ const n=(x,f)=>Number.isFinite(Number(x))?Math.trunc(Number(x)):f;
+ return {x:n(b.x,0),y:n(b.y,0),width:Math.max(320,n(b.width,640)),height:Math.max(240,n(b.height,700))};
+}
+function windowArguments(bounds){const b=normalizeWindowBounds(bounds);return [`--window-position=${b.x},${b.y}`,`--window-size=${b.width},${b.height}`];}
+function focusDedicatedWindow(kind,bounds){
  const port=rt.ports[kind];
  const profile=rt.profile(kind);
  const powershell=process.env.SystemRoot
@@ -21,6 +52,11 @@ $port=${Number(port)}
 $profile=${psQuote(profile)}
 $portNeedle='--remote-debugging-port='+$port
 $profileNeedle='--user-data-dir='+$profile
+$windowBounds=ConvertFrom-Json '${JSON.stringify(normalizeWindowBounds(bounds))}'
+$boundsX=[int]$windowBounds.x
+$boundsY=[int]$windowBounds.y
+$boundsW=[int]$windowBounds.width
+$boundsH=[int]$windowBounds.height
 Add-Type @'
 using System;
 using System.Runtime.InteropServices;
@@ -28,6 +64,7 @@ public static class AssistantPlanningWindow {
   [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
   [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 }
 '@
 $owners=Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"
@@ -42,6 +79,7 @@ foreach($owner in $owners){
   $handle=[IntPtr]$process.MainWindowHandle
   if($handle -eq [IntPtr]::Zero){continue}
   [AssistantPlanningWindow]::ShowWindowAsync($handle,9) | Out-Null
+  [AssistantPlanningWindow]::SetWindowPos($handle,[IntPtr]::Zero,$boundsX,$boundsY,$boundsW,$boundsH,0x0040) | Out-Null
   [AssistantPlanningWindow]::BringWindowToTop($handle) | Out-Null
   [AssistantPlanningWindow]::SetForegroundWindow($handle) | Out-Null
   exit 0
@@ -55,22 +93,34 @@ exit 1`;
   return result.status===0?0:(result.status===2?2:1);
  }catch{return 1;}
 }
-async function open(kind){
+ async function open(kind,options={}){
+  const background=options&&options.background===true;
  if(!urls[kind])throw new Error("Connexion inconnue.");rt.initialize();
- const existingWindow=focusDedicatedWindow(kind);
- if(await occupied(rt.ports[kind])){rt.verifyBrowser(kind);if(existingWindow!==0)focusDedicatedWindow(kind);return "La fenêtre de connexion est déjà ouverte.";}
- if(existingWindow===0||existingWindow===2){
-  for(let i=0;i<40;i++){if(await occupied(rt.ports[kind])){rt.verifyBrowser(kind);focusDedicatedWindow(kind);return "La fenêtre de connexion est déjà ouverte.";}await new Promise(r=>setTimeout(r,500));}
+ if(!background){const locks=require('./operation-lock');for(const name of ['sync.lock','update.lock'])locks.ensureAvailable(rt.dataPath(name),name==='update.lock'?'update':'sync');}
+ const existingWindow=background?1:focusDedicatedWindow(kind,options&&options.windowBounds);
+ let reopening=false;
+ if(await occupied(rt.ports[kind])){
+  rt.verifyBrowser(kind);
+  if(!background&&existingWindow===2){
+   if(!await closeDedicated(kind))throw new Error("Impossible de fermer la session invisible pour vous reconnecter.");
+   await waitForPort(rt.ports[kind],8000);
+   if(await occupied(rt.ports[kind]))throw new Error("Le navigateur termine sa fermeture. Réessayez dans quelques secondes.");
+   reopening=true;
+  }else{if(!background&&existingWindow!==0)focusDedicatedWindow(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
+ }
+ if(!reopening&&(existingWindow===0||existingWindow===2)){
+  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindow(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
   throw new Error("Le navigateur ne répond pas.");
  }
  fs.mkdirSync(rt.profile(kind),{recursive:true});
- const child=spawn(rt.browserExe(),["--app="+urls[kind],"--remote-debugging-address=127.0.0.1",
-  "--remote-debugging-port="+rt.ports[kind],"--user-data-dir="+rt.profile(kind),
-  "--no-first-run","--no-default-browser-check","--disable-background-mode","--enable-automation",urls[kind]],
-  {detached:true,stdio:"ignore",windowsHide:false});
+  const target=kind==='dendreo'&&!background?'https://formation.pompiers-14.org/login/formateur':urls[kind];
+  const browserArgs=(background?["--headless=new","--disable-gpu"]:[]).concat(background?[]:windowArguments(options&&options.windowBounds)).concat(["--app="+target,"--remote-debugging-address=127.0.0.1",
+   "--remote-debugging-port="+rt.ports[kind],"--user-data-dir="+rt.profile(kind),
+   "--no-first-run","--no-default-browser-check","--disable-background-mode","--enable-automation"]);
+  const child=spawn(rt.browserExe(),browserArgs,{detached:true,stdio:"ignore",windowsHide:background});
  await new Promise((resolve,reject)=>{child.once("spawn",resolve);child.once("error",()=>reject(new Error("Impossible d'ouvrir le navigateur.")));});
  child.unref();
- for(let i=0;i<40;i++){if(await occupied(rt.ports[kind])){rt.verifyBrowser(kind);focusDedicatedWindow(kind);return "Connectez-vous dans la fenêtre ouverte, puis cliquez sur Vérifier les connexions.";}await new Promise(r=>setTimeout(r,500));}
+  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindow(kind,options&&options.windowBounds);return background?"Session persistante ouverte en arriere-plan.":"Connectez-vous dans la fenêtre ouverte, puis cliquez sur Vérifier les connexions.";}
  throw new Error("Le navigateur ne répond pas.");
 }
 async function inspect(kind){
@@ -91,32 +141,59 @@ async function inspect(kind){
   const cfg=rt.config();rt.writeJson("colleague-config.json",{...cfg,dendreoUrl:page.url()});return true;
  }finally{await browser.disconnect();}
 }
-async function status(kind){
- try{rt.verifyBrowser(kind);}catch(error){return {connected:false,reconnect:false,temporary:false,available:false,reason:"browser_unavailable"};}
+async function closeDedicated(kind){
+ if(!rt.ports[kind])return false;
+ let browser;
+ try{
+  rt.verifyBrowser(kind);
+  browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports[kind]});
+  await browser.close();
+  return true;
+ }catch{return false;}
+ finally{if(browser)try{await browser.disconnect();}catch{}}
+}
+ async function status(kind){
+  try{rt.verifyBrowser(kind);}catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:false,available:false,reason:"browser_unavailable"});}
  let browser;
  try{
   browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports[kind]});
   const pages=await browser.pages();
   if(kind==="agatt"){
    const authPage=pages.find(p=>{try{const u=new URL(p.url());return u.hostname==="auth.sdis14.fr";}catch{return false;}});
-   if(authPage)return {connected:false,reconnect:true,temporary:false,available:true,reason:"auth_page"};
+    if(authPage)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"auth_page"});
    const page=pages.find(p=>{try{return new URL(p.url()).hostname==="agatt.sdis14.fr";}catch{return false;}});
-   if(!page)return {connected:false,reconnect:true,temporary:false,available:true,reason:"agatt_page_missing"};
+    if(!page)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"agatt_page_missing"});
    const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],button[type="submit"]'),cells:document.querySelectorAll("div.c").length}));
-   if(details.login||details.url.includes("auth.sdis14.fr"))return {connected:false,reconnect:true,temporary:false,available:true,reason:"login_form"};
-   if(details.cells<=0)return {connected:false,reconnect:true,temporary:false,available:true,reason:"planning_unavailable"};
-   return {connected:true,reconnect:false,temporary:false,available:true,reason:"planning_loaded"};
+    if(details.login||details.url.includes("auth.sdis14.fr"))return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"login_form"});
+    if(details.cells<=0)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"planning_unavailable"});
+    return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"planning_loaded"});
   }
   if(kind==="dendreo"){
    const page=pages.find(p=>{try{return new URL(p.url()).hostname==="formation.pompiers-14.org";}catch{return false;}});
-   if(!page)return {connected:false,reconnect:true,temporary:false,available:true,reason:"dendreo_page_missing"};
+    if(!page)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"dendreo_page_missing"});
    const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],form[action*="connexion" i]'),agenda:/\/agenda(?:[/?#]|$)/i.test(location.pathname),agendaLink:!!document.querySelector('a[href*="/agenda"]'),loginText:/\b(se\s+connecter|identifiant|mot\s+de\s+passe|connexion\s+à\s+votre\s+compte)\b/i.test(document.body&&document.body.innerText||"")}));
-   if(details.login||details.loginText)return {connected:false,reconnect:true,temporary:false,available:true,reason:"login_page"};
-   if(details.agenda||details.agendaLink)return {connected:true,reconnect:false,temporary:false,available:true,reason:"extranet_authenticated"};
-   return {connected:false,reconnect:true,temporary:false,available:true,reason:"agenda_missing"};
+    if(/\/login(?:\/|$)/i.test(new URL(details.url).pathname)||details.login||details.loginText)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"login_page"});
+    if((details.agenda||details.agendaLink)&&!/^\/login(?:\/|$)/i.test(new URL(details.url).pathname)){
+     const api=await page.evaluate(async()=>{
+      try{
+       let url;
+       if(window.config_agenda&&window.config_agenda.events_url)url=new URL(window.config_agenda.events_url,location.href);
+       else url=new URL(location.origin+location.pathname.replace(/\/agenda\/?$/,'')+'/events');
+       const now=new Date(),end=new Date(now);end.setDate(end.getDate()+1);
+       const iso=d=>d.toISOString().slice(0,10)+'T00:00:00';
+       url.search=new URLSearchParams({start:iso(now),end:iso(end),mode:'filter_agenda',agendaType:'agenda_principal',agendaMode:'principal',typeAgendaEvents:'me_or_groups'});
+       const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+       const text=await response.text();
+       return response.ok&&/json/i.test(String(response.headers.get('content-type')||''))&&!/^\s*</.test(text);
+      }catch{return false;}
+     });
+     if(!api)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"api_login_page"});
+     return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"extranet_authenticated"});
+    }
+    return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"agenda_missing"});
   }
-  return {connected:false,reconnect:false,temporary:false,available:true,reason:"unsupported"};
- }catch(error){return {connected:false,reconnect:false,temporary:true,available:true,reason:"temporary_error"};}
+   return reportStatus(kind,{connected:false,reconnect:false,temporary:false,available:true,reason:"unsupported"});
+  }catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:true,available:true,reason:"temporary_error"});}
  finally{if(browser)try{await browser.disconnect();}catch{}}
 }
-module.exports={open,inspect,status};
+module.exports={open,inspect,status,closeDedicated,normalizeWindowBounds,windowArguments};

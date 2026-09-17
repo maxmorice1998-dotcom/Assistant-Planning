@@ -1,13 +1,20 @@
 "use strict";
 const rt=require("./runtime-config");
-async function waitForBrowserConnection(kind, timeoutMs=240000){
+const diagnostic=require("./diagnostic-report");
+process.on("uncaughtException",error=>{try{diagnostic.reportError({module:"node",phase:"ui-backend",action:"backend",error,errorName:error&&error.name,type:error&&error.name});}catch{}process.exitCode=1;});
+process.on("unhandledRejection",error=>{try{diagnostic.reportError({module:"node",phase:"ui-backend",action:"backend",error,errorName:error&&error.name,type:error&&error.name});}catch{}process.exitCode=1;});
+async function waitForBrowserConnection(kind, timeoutMs=240000,windowBounds=null){
  const manager=require("./browser-manager");
- const started=await manager.open(kind);
+ const started=await manager.open(kind,{windowBounds});
  const deadline=Date.now()+timeoutMs;
  let last;
  while(Date.now()<deadline){
   last=await manager.status(kind);
-  if(last.connected===true){ return {ok:true,message:kind==="agatt"?"AGATT connecte":"Dendreo connecte",status:last};
+  if(last.connected===true){
+   // Le succès est déjà confirmé : inspection et fermeture du profil dédié
+   // restent en arrière-plan pour ne pas retarder l'actualisation visuelle.
+   Promise.resolve().then(()=>manager.inspect(kind)).catch(()=>{}).then(()=>manager.closeDedicated(kind)).catch(()=>{});
+   return {ok:true,message:kind==="agatt"?"AGATT connecte":"Dendreo connecte",status:last};
   }
   await new Promise(resolve=>setTimeout(resolve,250));
  }
@@ -31,14 +38,14 @@ async function handle(req){
   let agattStatus=await browserManager.status("agatt");
   // Une session authentifiée suffit pour découvrir/actualiser l'identifiant
   // AGATT depuis les cellules du planning, sans saisie manuelle.
-  if(agattStatus.connected===true){try{await browserManager.inspect("agatt");}catch{} }
-  agattStatus=await browserManager.status("agatt");
+  if(agattStatus.connected===true&&agattStatus.available!==false){try{await browserManager.inspect("agatt");}catch{} }
   const dendreoStatus=await require("./browser-manager").status("dendreo");
   const googleStatus=await require("./google-oauth-v2").status();
   const updateStatus=null;
   return {ok:true,message:"Mode simulation : aucune modification des agendas et aucun mail envoyé.",
    googleEmail:cfg.googleEmail||alerts.smtpUser||"",smtpUser:alerts.smtpUser||"",to:alerts.to||"",smtpSaved:rt.hasSecret("smtp"),
    agatt:agattStatus.connected===true,agattStatus,dendreo:dendreoStatus.connected===true,dendreoStatus,google:rt.hasSecret("google-token"),
+   reposCompensatoire:cfg.reposCompensatoire===true,
    browserReady,googleAvailable:googleStatus.configured,googleStatus,updateStatus,dryRun:true};
  }
  case "startup":{
@@ -64,8 +71,14 @@ async function handle(req){
   rt.saveSecret("google-client-secret",req.clientSecret);
   return {ok:true,message:"Configuration Google enregistrée sur ce PC."};
  }
- case "open-agatt":return await waitForBrowserConnection("agatt");
- case "open-dendreo":return await waitForBrowserConnection("dendreo");
+ case "set-repos":{
+  const cfg=rt.config();
+  cfg.reposCompensatoire=req.value===true;
+  rt.writeJson("colleague-config.json",cfg);
+  return {ok:true,message:cfg.reposCompensatoire?"Repos compensatoire activé.":"Repos compensatoire désactivé.",reposCompensatoire:cfg.reposCompensatoire};
+ }
+ case "open-agatt":return await waitForBrowserConnection("agatt",240000,req.windowBounds);
+ case "open-dendreo":return await waitForBrowserConnection("dendreo",240000,req.windowBounds);
  case "inspect":{
   const messages=[];let ok=true;
   for(const kind of ["agatt","dendreo"]){try{await require("./browser-manager").inspect(kind);messages.push(kind.toUpperCase()+" : connecté.");}
@@ -74,12 +87,12 @@ async function handle(req){
  }
  case "google":{
   try {
-   const result=await require("./google-oauth-v2").connectGoogle();
+   const result=await require("./google-oauth-v2").connectGoogle({windowBounds:req.windowBounds});
    const message="✅ Google connecté";
    return {ok:true,message};
   } catch(e) {
    const message=String(e.message||"");
-   const friendly=/^(La connexion Google|Impossible d’ouvrir le navigateur|L’autorisation Google|Connexion Google annulée|Google n’a pas)/.test(message);
+   const friendly=/^(La connexion Google|Impossible d’ouvrir le navigateur|L’autorisation Google|Connexion Google annulée|Google n’a pas|Autorisation Gmail manquante)/.test(message);
    return {ok:false,message:friendly?message:"La connexion Google n’a pas abouti. Vérifiez votre connexion Internet puis réessayez. Si le problème persiste, contactez votre distributeur."};
   }
  }
@@ -95,7 +108,8 @@ async function handle(req){
  case "synchronize":{
   try {
    const result=await require("./colleague-runner").run({dryRun:false});
-   return {ok:result.ok,message:result.ok?"✅ Synchronisation terminée.":"Synchronisation interrompue.",results:result.results};
+   if(result.ok)diagnostic.flushPending();
+    const mailMessage=result.mailStatus&&result.mailStatus.message?"\n"+result.mailStatus.message:"";return {ok:result.ok,message:result.ok?"? Synchronisation termin?e."+mailMessage:"Synchronisation interrompue.",results:result.results,durationMs:result.durationMs,summary:result.summary,mailStatus:result.mailStatus||null};
   } catch(error) {
    return {ok:false,message:"Synchronisation impossible : "+safeDiagnostic(error&&error.message),results:[]};
   }
