@@ -147,6 +147,8 @@ function temporarySmtpError(err) {
 }
 
 async function sendMail(subject, text, dedupe = true) {
+  // Un seul mail est envoyé à la fin par send-combined-alerts.js.
+  return;
   if (DRY_RUN) { console.log("TEST mail :", subject); return; }
   // SDIS-COMBINED-MAIL-DENDREO
   if (process.env.SDIS_COMBINED_MAIL === "1") {
@@ -529,8 +531,14 @@ async function afterMode() {
   const guardSet = new Set(await guards());
   const missing = [];
   const duplicates = [];
+  const conflictDates = new Set(Array.isArray(shared?.dendreoConflicts) ? shared.dendreoConflicts.filter(d => /^\d{4}-\d{2}-\d{2}$/.test(String(d||''))).map(String) : []);
   for(const date of guardSet) {
     const day = dendreoState.dayState(currentAfter,date);
+    if(conflictDates.has(date)) {
+      // Le serveur Dendreo a refusé la création (créneau existant) : ce n'est pas une absence à corriger.
+      dendreoState.logDay(date,day,'CONFLIT (créneau existant, aucune indisponibilité créée)');
+      continue;
+    }
     if(!day.bots.length) missing.push(date);
     if(day.bots.length>1) duplicates.push(date);
     dendreoState.logDay(date,day,day.bots.length>1?'DELETE DUPLICATE':day.bots.length?'NOTHING':'CREATE');

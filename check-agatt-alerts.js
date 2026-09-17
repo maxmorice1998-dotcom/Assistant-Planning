@@ -143,6 +143,8 @@ function temporarySmtpError(err) {
 }
 
 async function sendMail(subject, text, dedupe = true) {
+  // Un seul mail est envoyé à la fin par send-combined-alerts.js.
+  return;
   if (DRY_RUN) { console.log("TEST mail :", subject); return; }
   // SDIS-COMBINED-MAIL-AGATT
   if (process.env.SDIS_COMBINED_MAIL === "1") {
