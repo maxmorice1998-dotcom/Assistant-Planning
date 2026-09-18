@@ -16,6 +16,13 @@ internal static class Program {
  [STAThread] static int Main(string[] args) {
   try {
    string root=AppDomain.CurrentDomain.BaseDirectory;
+   if(args.Length==1 && args[0]=="--background-sync"){
+    var info=new ProcessStartInfo(Path.Combine(root,"runtime","node","node.exe"),"\""+Path.Combine(root,"background-sync.js")+"\""){
+     WorkingDirectory=root,UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden
+    };
+    info.EnvironmentVariables["SDIS_ASSISTANT_EXE"]=Path.Combine(root,"SDIS-Collegues.exe");
+    using(var process=Process.Start(info)){process.WaitForExit();return process.ExitCode;}
+   }
    bool created;
    singleInstance=new System.Threading.Mutex(true,"Local\\AssistantPlanning.UI",out created);
    if(!created)return 0;
@@ -48,6 +55,10 @@ internal static class Program {
    }
    return 0;
   } catch {
+   if(args.Length==1 && args[0]=="--background-sync"){
+    try{string dir=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SDIS-Bot-Collegues");Directory.CreateDirectory(dir);File.AppendAllText(Path.Combine(dir,"assistant-planning.log"),DateTime.UtcNow.ToString("o")+" [AUTO] ERREUR : moteur indisponible.\n");}catch{}
+    return 1;
+   }
    if(args.Length>0 && (args[0]=="--protect"||args[0]=="--unprotect"))return 2;
    MessageBox.Show("Impossible de démarrer SDIS. Demandez une copie complète du programme.","SDIS",MessageBoxButtons.OK,MessageBoxIcon.Error);
    return 1;

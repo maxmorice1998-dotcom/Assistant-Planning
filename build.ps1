@@ -1,3 +1,4 @@
+param([string]$OutputRoot=$PSScriptRoot)
 $ErrorActionPreference='Stop'
 $versionPath=Join-Path $PSScriptRoot 'app-version.json'
 if(-not(Test-Path -LiteralPath $versionPath)){throw 'Fichier app-version.json absent.'}
@@ -14,8 +15,8 @@ $assemblyInfo=Join-Path $PSScriptRoot '.build-version.cs'
 if($version -notmatch '^\d+\.\d+\.\d+$'){throw 'Version invalide.'}
 [IO.File]::WriteAllText($assemblyInfo,('[assembly:System.Reflection.AssemblyVersion("'+$version+'.0")][assembly:System.Reflection.AssemblyFileVersion("'+$version+'.0")][assembly:System.Reflection.AssemblyInformationalVersion("'+$version+'") ]'),[Text.UTF8Encoding]::new($false))
 try {
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /win32icon:"$PSScriptRoot\assets\assistant-planning.ico" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll /reference:Microsoft.CSharp.dll /out:"$PSScriptRoot\SDIS-Collegues.exe" "$PSScriptRoot\SDIS-Collegues.cs" "$PSScriptRoot\ShortcutRepair.cs" $assemblyInfo
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /win32icon:"$PSScriptRoot\assets\assistant-planning.ico" /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Web.Extensions.dll /reference:System.Security.dll /reference:Microsoft.CSharp.dll /out:"$OutputRoot\SDIS-Collegues.exe" "$PSScriptRoot\SDIS-Collegues.cs" "$PSScriptRoot\ShortcutRepair.cs" $assemblyInfo
 if($LASTEXITCODE -ne 0){throw 'Compilation impossible.'}
-& $compiler /nologo /target:exe /platform:x64 /optimize+ /codepage:65001 /reference:System.Security.dll /out:"$PSScriptRoot\SDIS-Collegues-Bridge.exe" "$PSScriptRoot\SDIS-Collegues-Bridge.cs" $assemblyInfo
+& $compiler /nologo /target:exe /platform:x64 /optimize+ /codepage:65001 /reference:System.Security.dll /out:"$OutputRoot\SDIS-Collegues-Bridge.exe" "$PSScriptRoot\SDIS-Collegues-Bridge.cs" $assemblyInfo
 if($LASTEXITCODE -ne 0){throw 'Compilation du pont DPAPI impossible.'}
 } finally { Remove-Item -LiteralPath $assemblyInfo -Force -ErrorAction SilentlyContinue }

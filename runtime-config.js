@@ -39,7 +39,10 @@ function readProgramJson(name,fallback) {
 function initialize(){
  fs.mkdirSync(dataDir,{recursive:true});
  for(const name of ["colleague-config.json","alert.json","dendreo-config.json"]) {
-  if(!fs.existsSync(dataPath(name))) writeJson(name,parseJson(fs.readFileSync(path.join(root,name),"utf8")));
+  if(!fs.existsSync(dataPath(name))) {
+   const defaults=path.join(root,name);
+   writeJson(name,fs.existsSync(defaults)?parseJson(fs.readFileSync(defaults,"utf8")):{});
+  }
  }
  // Le mode d'exécution est choisi explicitement par l'appelant (--dry-run ou --real).
  // Ne jamais modifier ici la configuration persistée pour imposer un mode global.

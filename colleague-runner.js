@@ -16,7 +16,10 @@ let mailResultPath="";
 let progressPath="";
 let progressMode="test";
 let diagnosticHandling=false;
+let automaticRun=false;
+const automaticBrowsers=new Set();
 function reportUnhandled(error,phase="node"){
+ if(automaticRun)return; // Le mail de synchronisation existant signale déjà cet échec.
  if(diagnosticHandling)return;diagnosticHandling=true;try{diagnostic.reportError({module:"node",phase,action:activeMode,error,errorName:error&&error.name,type:error&&error.name});}catch{}finally{diagnosticHandling=false;}
 }
 process.on("uncaughtException",error=>{reportUnhandled(error,"uncaughtException");process.exitCode=1;});
@@ -87,12 +90,12 @@ async function preflightReal(){
  if(!googleStatus.connected)throw new Error(googleStatus.temporary?"Connexion Google : service temporairement inaccessible.":"Connexion Google : reconnexion nécessaire.");
  const manager=require("./browser-manager");
  let agattStatus=await manager.status("agatt");
- if(!agattStatus.connected||agattStatus.available===false){try{await manager.open("agatt",{background:true});}catch(error){throw new Error("AGATT : reconnexion nécessaire.");}}
+ if(!agattStatus.connected||agattStatus.available===false){try{if(automaticRun&&agattStatus.available===false)automaticBrowsers.add("agatt");await manager.open("agatt",{background:true});}catch(error){throw new Error("AGATT : reconnexion nécessaire.");}}
  agattStatus=await manager.status("agatt");
  if(!agattStatus.connected)throw new Error("Connexion AGATT : planning non connecté.");
  try{await manager.inspect("agatt");}catch(error){throw new Error("AGATT : reconnexion nécessaire.");}
  let dendreoStatus=await manager.status("dendreo");
- if(!dendreoStatus.connected||dendreoStatus.available===false){try{await manager.open("dendreo",{background:true});}catch(error){throw new Error("Dendreo : reconnexion nécessaire.");}}
+ if(!dendreoStatus.connected||dendreoStatus.available===false){try{if(automaticRun&&dendreoStatus.available===false)automaticBrowsers.add("dendreo");await manager.open("dendreo",{background:true});}catch(error){throw new Error("Dendreo : reconnexion nécessaire.");}}
  dendreoStatus=await manager.status("dendreo");
  if(!dendreoStatus.connected)throw new Error("Connexion Dendreo : extranet non authentifié.");
 }
@@ -129,6 +132,7 @@ async function run(options={}){
  const lock=rt.dataPath("sync.lock");let fd;
  const results=[];
   fd=acquireSimulationLock(lock);
+ automaticRun=options.background===true;
  try{
   // Une mise à jour remplace les fichiers programme : aucune synchronisation
   // ne doit démarrer pendant cette courte fenêtre.
@@ -184,6 +188,8 @@ async function run(options={}){
   try{fs.appendFileSync(rt.dataPath("assistant-planning.log"),[...diagnosticHeader(),...results.map(r=>`${r.name} : ${r.ok?"OK":"ERREUR"}${r.code===null?"":" (code "+r.code+")"}${r.durationMs==null?"":" | durée="+r.durationMs+" ms"}${r.ok?"":" — "+r.message+" | script="+r.script+" | args="+JSON.stringify(r.args||[])+" | stderr="+(r.stderr||"")+" | stdout="+(r.stdout||"")}`)].join("\n")+"\n","utf8");}catch{}
   throw error;
  }finally{
+  for(const kind of automaticBrowsers){try{await require("./browser-manager").closeDedicated(kind);}catch{}}
+  automaticBrowsers.clear();automaticRun=false;
    releaseSimulationLock(lock,fd);
   if(executionCachePath){try{fs.unlinkSync(executionCachePath);}catch{} }
   executionCachePath="";mailResultPath="";progressPath="";
