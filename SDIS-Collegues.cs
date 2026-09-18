@@ -34,6 +34,7 @@ internal static class Program {
    }
    Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
    using(MainForm form=new MainForm()){
+    if(args.Length==2&&args[0]=="--calendar")form.PreviewCalendar(args[1]);
     if((args.Length==2 && args[0]=="--preview")||(args.Length==3 && args[0]=="--preview-calendar")){
      if(args[0]=="--preview-calendar")form.PreviewCalendar(args[2]);
      form.Show();Application.DoEvents();
@@ -58,13 +59,15 @@ internal sealed class MainForm:Form {
  readonly Label googleBadge=new Label(),agattBadge=new Label(),dendreoBadge=new Label();
  readonly List<Button> buttons=new List<Button>();
  readonly CheckBox reposCheck=new CheckBox();
+ readonly Panel reposCard=new Panel();
  bool updatingRepos;
  readonly JavaScriptSerializer json=new JavaScriptSerializer();
  readonly Panel busyPanel=new Panel();
  readonly Label busySpinner=new Label(),busyText=new Label(),progressDetail=new Label(),progressCounters=new Label(),progressDuration=new Label();
  readonly ProgressBar syncProgress=new ProgressBar();
  readonly Panel calendarPreview=new Panel();
- readonly Dictionary<Control,bool> calendarVisibility=new Dictionary<Control,bool>();
+
+
 
  readonly Timer busyTimer=new Timer();
  readonly Timer progressTimer=new Timer();
@@ -76,8 +79,8 @@ internal sealed class MainForm:Form {
  Text="Assistant Planning";ClientSize=new Size(640,800);MinimumSize=new Size(656,839);AutoScroll=false;
   try{string iconPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","assistant-planning.ico");if(File.Exists(iconPath))Icon=new Icon(iconPath);}catch{}
   StartPosition=FormStartPosition.CenterScreen;Font=new Font("Segoe UI",11);BackColor=Color.FromArgb(250,250,249);
-  Panel header=new Panel{Bounds=new Rectangle(0,0,640,126),BackColor=Color.White};Controls.Add(header);
-  header.Controls.Add(new Panel{Bounds=new Rectangle(0,122,640,4),BackColor=Color.FromArgb(232,35,42)});
+  Panel header=new Panel{Bounds=new Rectangle(0,0,640,126),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,BackColor=Color.White};Controls.Add(header);
+  header.Controls.Add(new Panel{Dock=DockStyle.Bottom,Height=4,BackColor=Color.FromArgb(232,35,42)});
   PictureBox logo=new PictureBox{Bounds=new Rectangle(26,18,92,88),SizeMode=PictureBoxSizeMode.Zoom,BackColor=Color.Transparent};
   string logoPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","udsp14-logo.png");if(File.Exists(logoPath)){try{logo.Image=Image.FromFile(logoPath);}catch{}}header.Controls.Add(logo);
   header.Controls.Add(new Label{Text="UDSP 14",Font=new Font("Segoe UI",12,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(140,22)});
@@ -88,7 +91,7 @@ internal sealed class MainForm:Form {
   AddService("AGATT",agattBadge,"Connecter AGATT","open-agatt","A",Color.FromArgb(3,46,66),288);
   AddService("Dendreo",dendreoBadge,"Connecter Dendreo","open-dendreo","D",Color.FromArgb(244,126,32),380);
    Button sync=new Button{Text="Synchroniser maintenant",Bounds=new Rectangle(34,550,570,44),BackColor=Color.FromArgb(232,35,42),ForeColor=Color.White,FlatStyle=FlatStyle.Flat};sync.FlatAppearance.BorderSize=0;sync.Click+=(s,e)=>Call("synchronize");buttons.Add(sync);Controls.Add(sync);
-   Panel reposCard=new Panel{Bounds=new Rectangle(34,476,570,62),BackColor=Color.White,BorderStyle=BorderStyle.FixedSingle};Controls.Add(reposCard);
+   reposCard.Bounds=new Rectangle(34,476,570,62);reposCard.BackColor=Color.White;reposCard.BorderStyle=BorderStyle.FixedSingle;Controls.Add(reposCard);
    reposCard.Controls.Add(new Panel{Bounds=new Rectangle(0,0,5,62),BackColor=Color.FromArgb(244,126,32)});
    reposCheck.Text="";reposCheck.Bounds=new Rectangle(18,17,26,26);reposCheck.ForeColor=Color.FromArgb(3,46,66);reposCheck.CheckedChanged+=(s,e)=>{if(!updatingRepos)SaveRepos(reposCheck.Checked);};reposCard.Controls.Add(reposCheck);
    reposCard.Controls.Add(new Label{Text="Repos compensatoire",Font=new Font("Segoe UI",11,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(58,10)});
@@ -246,63 +249,24 @@ void RefreshStatusInBackground(){
  }
  void ShowDendreoCalendarScreen(Dictionary<string,object> response){
   calendarPreview.SuspendLayout();
-  if(!calendarPreview.Visible){calendarVisibility.Clear();foreach(Control control in Controls){if(control!=calendarPreview&&control.Top>=148){calendarVisibility[control]=control.Visible;control.Visible=false;}}}
+  if(!calendarPreview.Visible){foreach(Control control in Controls){if(control!=calendarPreview&&control.Top>=148)control.Visible=false;}}
   while(calendarPreview.Controls.Count>0)calendarPreview.Controls[0].Dispose();
-  calendarPreview.Bounds=new Rectangle(34,148,ClientSize.Width-68,ClientSize.Height-172);
+  calendarPreview.Bounds=new Rectangle(16,136,ClientSize.Width-32,ClientSize.Height-148);
   calendarPreview.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;
   calendarPreview.Padding=new Padding(12);
   Panel heading=new Panel{Dock=DockStyle.Top,Height=94};
-  Button back=new Button{Text="Retour",Dock=DockStyle.Right,Width=80};
-  back.Click+=(sender,args)=>{calendarPreview.Visible=false;foreach(var entry in calendarVisibility)entry.Key.Visible=entry.Value;foreach(Button button in buttons)button.Visible=true;reposCheck.Visible=true;};
-  heading.Controls.Add(back);
-  heading.Controls.Add(new Label{Text="Agenda Dendreo",AutoSize=true,Font=new Font("Segoe UI",14,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Location=new Point(0,0)});
+  heading.Controls.Add(new Label{Text="Dendreo • 28 prochains jours",AutoSize=true,Font=new Font("Segoe UI",14,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Location=new Point(0,0)});
   DateTime first=DateTime.ParseExact(Convert.ToString(response["from"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
   DateTime last=DateTime.ParseExact(Convert.ToString(response["to"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
   heading.Controls.Add(new Label{Text=first.ToString("dd/MM/yyyy")+" au "+last.ToString("dd/MM/yyyy"),AutoSize=true,Location=new Point(0,34),Font=new Font("Segoe UI",10),ForeColor=Color.DimGray});
-  heading.Controls.Add(new Label{Text="Intitulés complets et horaires • faites défiler pour voir la suite",AutoSize=true,Location=new Point(0,61),Font=new Font("Segoe UI",9),ForeColor=Color.DimGray});
-  DataGridView grid=new DataGridView{Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AllowUserToDeleteRows=false,AllowUserToResizeRows=false,RowHeadersVisible=false,AutoGenerateColumns=false,BackgroundColor=Color.White,BorderStyle=BorderStyle.None,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false,AutoSizeRowsMode=DataGridViewAutoSizeRowsMode.AllCells,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,ScrollBars=ScrollBars.Vertical,ColumnHeadersHeightSizeMode=DataGridViewColumnHeadersHeightSizeMode.AutoSize};
-  grid.DefaultCellStyle.Font=new Font("Segoe UI",10);
-  grid.DefaultCellStyle.WrapMode=DataGridViewTriState.True;
-  grid.DefaultCellStyle.Padding=new Padding(7);
-  grid.DefaultCellStyle.ForeColor=Color.FromArgb(3,46,66);
-  grid.DefaultCellStyle.SelectionBackColor=Color.FromArgb(220,235,244);
-  grid.DefaultCellStyle.SelectionForeColor=Color.FromArgb(3,46,66);
-  grid.DefaultCellStyle.Alignment=DataGridViewContentAlignment.TopLeft;
-  grid.ColumnHeadersDefaultCellStyle.Font=new Font("Segoe UI",10,FontStyle.Bold);
-  grid.EnableHeadersVisualStyles=false;
-  grid.ColumnHeadersDefaultCellStyle.BackColor=Color.FromArgb(240,244,246);
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Date",FillWeight=25,MinimumWidth=100,SortMode=DataGridViewColumnSortMode.NotSortable});
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Horaires",FillWeight=22,MinimumWidth=95,SortMode=DataGridViewColumnSortMode.NotSortable});
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Prévu dans Dendreo",FillWeight=65,MinimumWidth=160,SortMode=DataGridViewColumnSortMode.NotSortable});
-  var byDate=new Dictionary<string,List<Dictionary<string,object>>>();
-  foreach(object value in Values(response.ContainsKey("events")?response["events"]:null)){
-   var ev=value as Dictionary<string,object>;if(ev==null)continue;
-   foreach(object valueDate in Values(ev.ContainsKey("dates")?ev["dates"]:null)){
-    string key=Convert.ToString(valueDate);
-    if(!byDate.ContainsKey(key))byDate[key]=new List<Dictionary<string,object>>();
-    byDate[key].Add(ev);
-   }
-  }
-  var french=System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
-  for(DateTime day=first;day<=last;day=day.AddDays(1)){
-   string key=day.ToString("yyyy-MM-dd"),date=day.ToString("ddd dd/MM",french);
-   if(!byDate.ContainsKey(key)){
-    int empty=grid.Rows.Add(date,"—","Aucun événement prévu");
-    grid.Rows[empty].DefaultCellStyle.ForeColor=Color.Gray;continue;
-   }
-   byDate[key].Sort((left,right)=>String.CompareOrdinal(CalendarValue(left,"startTime"),CalendarValue(right,"startTime")));
-   foreach(var ev in byDate[key]){
-    string text=CalendarValue(ev,"text"),start=CalendarValue(ev,"startTime"),end=CalendarValue(ev,"endTime");
-    string hours=start=="00:00"&&end=="00:00"?"Toute la journée":start+" – "+end;
-    int row=grid.Rows.Add(date,hours,String.IsNullOrWhiteSpace(text)?"Événement sans intitulé":text);
-    grid.Rows[row].DefaultCellStyle.BackColor=CalendarEventColor(CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"])));
-   }
-  }
-  calendarPreview.Controls.Add(grid);
+  heading.Controls.Add(new Label{Text="Les 28 jours sont visibles ensemble • cliquez sur un événement ou une date pour lire les détails",AutoSize=true,Location=new Point(0,61),Font=new Font("Segoe UI",9),ForeColor=Color.DimGray});
+  Planning28Agenda agenda=new Planning28Agenda(response);
+  agenda.Dock=DockStyle.Fill;
+  heading.Height=78;
+  calendarPreview.Controls.Add(agenda);
   calendarPreview.Controls.Add(heading);
   calendarPreview.Visible=true;calendarPreview.BringToFront();
   calendarPreview.ResumeLayout(true);
-  grid.ClearSelection();
  }
  public void PreviewCalendar(string file){ShowDendreoCalendarScreen(json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file,Encoding.UTF8)));}
  string CalendarValue(Dictionary<string,object> ev,string key){return Convert.ToString(ev.ContainsKey(key)?ev[key]:"");}
@@ -329,7 +293,7 @@ void RefreshStatusInBackground(){
   }
  string BusyMessage(string action){if(action=="startup")return "Recherche de mise a jour...";if(action=="google")return "Connexion a Google...";if(action=="open-agatt")return "Connexion a AGATT...";if(action=="open-dendreo")return "Connexion a Dendreo...";if(action=="synchronize")return "Synchronisation en cours...";return "Verification en cours...";}
  void PollProgress(){if(!syncProgressMode)return;try{string file=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SDIS-Bot-Collegues","sync-progress.json");if(!File.Exists(file))return;var p=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file,Encoding.UTF8));if(p==null||!String.Equals(Convert.ToString(p.ContainsKey("mode")?p["mode"]:""),"sync",StringComparison.OrdinalIgnoreCase))return;if(p.ContainsKey("percent")){int n=Math.Max(0,Math.Min(100,Convert.ToInt32(p["percent"])));syncProgress.Value=n;busyText.Text="Synchronisation en cours — "+n+" %";}if(p.ContainsKey("message")&&!String.IsNullOrWhiteSpace(Convert.ToString(p["message"])))progressDetail.Text=Convert.ToString(p["message"]);if(p.ContainsKey("detail"))progressCounters.Text=Convert.ToString(p["detail"]);if(syncStartedAt!=DateTime.MinValue)progressDuration.Text="Durée : "+(DateTime.Now-syncStartedAt).TotalSeconds.ToString("0.0")+" secondes";}catch{}}
- void SetBusy(bool value,string message,bool showProgress){busy=value;syncProgressMode=value&&showProgress;busyText.Text=message;busyPanel.Visible=syncProgressMode;syncProgress.Visible=syncProgressMode;progressDetail.Visible=syncProgressMode;progressCounters.Visible=syncProgressMode;progressDuration.Visible=syncProgressMode;if(value){syncStartedAt=DateTime.Now;syncProgress.Value=0;progressDetail.Text="";progressCounters.Text="";progressDuration.Text="";busyTimer.Tag=0;busySpinner.Text="|";busyTimer.Start();if(syncProgressMode){progressTimer.Start();busyPanel.BringToFront();}}else{busyTimer.Stop();progressTimer.Stop();busyPanel.Visible=false;}foreach(Button b in buttons){b.Visible=!value&&!calendarPreview.Visible;b.Enabled=!value;}reposCheck.Visible=!value&&!calendarPreview.Visible;reposCheck.Enabled=!value;}
+ void SetBusy(bool value,string message,bool showProgress){busy=value;syncProgressMode=value&&showProgress;busyText.Text=message;busyPanel.Visible=syncProgressMode;syncProgress.Visible=syncProgressMode;progressDetail.Visible=syncProgressMode;progressCounters.Visible=syncProgressMode;progressDuration.Visible=syncProgressMode;if(value){syncStartedAt=DateTime.Now;syncProgress.Value=0;progressDetail.Text="";progressCounters.Text="";progressDuration.Text="";busyTimer.Tag=0;busySpinner.Text="|";busyTimer.Start();if(syncProgressMode){progressTimer.Start();busyPanel.BringToFront();}}else{busyTimer.Stop();progressTimer.Stop();busyPanel.Visible=false;}foreach(Button b in buttons){b.Visible=!value&&!calendarPreview.Visible;b.Enabled=!value;}reposCard.Visible=!value&&!calendarPreview.Visible;reposCheck.Visible=!value&&!calendarPreview.Visible;reposCheck.Enabled=!value;}
  void ShowError(string message){
   status.ForeColor=Color.Firebrick;status.Text=message;
   MessageBox.Show(this,message,"Assistant Planning",MessageBoxButtons.OK,MessageBoxIcon.Warning);
@@ -349,4 +313,111 @@ void RefreshStatusInBackground(){
   status.Text="";
   updatingRepos=true;reposCheck.Checked=Flag(response,"reposCompensatoire");updatingRepos=false;
  }
+}
+
+internal sealed class Planning28Agenda:UserControl {
+ sealed class Entry {public DateTime Day;public string Title,Hours,Start;public bool Unavailable;public Rectangle Bounds;}
+ sealed class Surface:Panel {public Surface(){DoubleBuffered=true;ResizeRedraw=true;}}
+ readonly Surface canvas=new Surface();
+ readonly TextBox detail=new TextBox();
+ readonly ToolTip tooltip=new ToolTip();
+ readonly List<Entry> entries=new List<Entry>();
+ readonly Rectangle[] days=new Rectangle[28];
+ readonly System.Globalization.CultureInfo french=System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+ readonly DateTime first;
+ Entry selected;DateTime selectedDay=DateTime.MinValue;
+ public Planning28Agenda(Dictionary<string,object> response){
+  Font=new Font("Segoe UI",10);BackColor=Color.White;
+  first=DateTime.ParseExact(Value(response,"from"),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+  foreach(object item in Items(response.ContainsKey("events")?response["events"]:null)){
+   var ev=item as Dictionary<string,object>;if(ev==null)continue;
+   string start=Value(ev,"startTime"),end=Value(ev,"endTime"),title=Value(ev,"text");
+   foreach(object raw in Items(ev.ContainsKey("dates")?ev["dates"]:null)){
+    DateTime day;if(!DateTime.TryParseExact(Convert.ToString(raw),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture,System.Globalization.DateTimeStyles.None,out day))continue;
+    if(day<first||day>=first.AddDays(28))continue;
+    entries.Add(new Entry{Day=day,Title=String.IsNullOrWhiteSpace(title)?"Événement sans intitulé":title,Start=start,Hours=start=="00:00"&&end=="00:00"?"Toute la journée":start+" – "+end,Unavailable=ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"])});
+   }
+  }
+  entries.Sort((a,b)=>{int day=a.Day.CompareTo(b.Day);return day!=0?day:String.CompareOrdinal(a.Start,b.Start);});
+  detail.Dock=DockStyle.Bottom;detail.Height=86;detail.Multiline=true;detail.ReadOnly=true;detail.ScrollBars=ScrollBars.Vertical;detail.BackColor=Color.FromArgb(248,250,252);detail.BorderStyle=BorderStyle.FixedSingle;
+  detail.Text="Cliquez sur un événement pour lire son intitulé complet, ou sur une date pour voir tout ce qui est prévu ce jour-là.";
+  canvas.Dock=DockStyle.Fill;canvas.BackColor=Color.White;canvas.Paint+=PaintPlanning;canvas.MouseClick+=SelectEntry;canvas.MouseMove+=HoverEntry;
+  Controls.Add(canvas);Controls.Add(detail);
+  canvas.Resize+=(s,e)=>LayoutPlanning();
+  LayoutPlanning();
+ }
+ static string Value(Dictionary<string,object> data,string key){return data.ContainsKey(key)?Convert.ToString(data[key]):"";}
+ static IEnumerable Items(object value){return value as IEnumerable??new object[0];}
+ List<Entry> ForDay(DateTime day){return entries.FindAll(entry=>entry.Day==day);}
+ bool HasConflict(DateTime day){var events=ForDay(day);return events.Exists(entry=>entry.Unavailable)&&events.Exists(entry=>!entry.Unavailable);}
+ string ConflictText(DateTime day){return HasConflict(day)?"CONFLIT : indisponibilité (rouge) et événement prévu (bleu) sur cette journée."+Environment.NewLine:"";}
+ void LayoutPlanning(){
+  foreach(var entry in entries)entry.Bounds=Rectangle.Empty;
+  for(int index=0;index<28;index++){
+   int col=index%7,row=index/7;
+   int x=col*canvas.ClientSize.Width/7,y=row*canvas.ClientSize.Height/4;
+   int right=(col+1)*canvas.ClientSize.Width/7,bottom=(row+1)*canvas.ClientSize.Height/4;
+   Rectangle cell=new Rectangle(x+2,y+2,Math.Max(1,right-x-4),Math.Max(1,bottom-y-4));days[index]=cell;
+   var events=ForDay(first.AddDays(index));
+   int contentTop=HasConflict(first.AddDays(index))?48:32;
+   int available=Math.Max(0,cell.Height-contentTop-3),count=Math.Min(events.Count,available/36);
+   int reserved=count<events.Count?20:0;
+   int cardHeight=count>0?Math.Min(100,(available-reserved)/count):0;
+   for(int i=0;i<count;i++)events[i].Bounds=new Rectangle(cell.X+4,cell.Y+contentTop+i*cardHeight,Math.Max(1,cell.Width-8),Math.Max(1,cardHeight-3));
+  }
+  canvas.Invalidate();
+ }
+ void PaintPlanning(object sender,PaintEventArgs args){
+  Graphics g=args.Graphics;g.Clear(Color.White);
+  using(Font dayFont=new Font("Segoe UI",9,FontStyle.Bold))using(Font eventFont=new Font("Segoe UI",9)){
+   for(int index=0;index<28;index++){
+    Rectangle cell=days[index];DateTime date=first.AddDays(index);bool conflict=HasConflict(date);
+    bool weekend=date.DayOfWeek==DayOfWeek.Saturday||date.DayOfWeek==DayOfWeek.Sunday;
+    using(var brush=new SolidBrush(conflict?Color.FromArgb(255,248,235):(weekend?Color.FromArgb(248,249,250):Color.White)))g.FillRectangle(brush,cell);
+    g.DrawRectangle(Pens.Gainsboro,cell);
+    Rectangle heading=new Rectangle(cell.X+1,cell.Y+1,cell.Width-2,27);
+    using(var brush=new SolidBrush(date==DateTime.Today?Color.FromArgb(232,240,254):Color.FromArgb(245,247,249)))g.FillRectangle(brush,heading);
+    TextRenderer.DrawText(g,date.ToString("ddd dd/MM",french),dayFont,new Rectangle(heading.X+5,heading.Y+3,heading.Width-8,24),date==DateTime.Today?Color.FromArgb(26,115,232):Color.FromArgb(60,64,67),TextFormatFlags.NoPrefix);
+    if(conflict){
+     using(Font badge=new Font("Segoe UI",8,FontStyle.Bold))TextRenderer.DrawText(g,"! CONFLIT",badge,new Rectangle(cell.X+3,cell.Y+28,cell.Width-6,18),Color.FromArgb(164,71,0),TextFormatFlags.NoPrefix|TextFormatFlags.HorizontalCenter);
+    }
+    if(date==selectedDay)using(Pen pen=new Pen(Color.FromArgb(26,115,232),1)){Rectangle outline=cell;outline.Inflate(-3,-3);g.DrawRectangle(pen,outline);}
+    var events=ForDay(date);int visible=0;
+    foreach(var entry in events){
+     if(entry.Bounds.IsEmpty)continue;visible++;
+     Color color=entry.Unavailable?Color.FromArgb(252,232,230):Color.FromArgb(210,227,252);
+     using(var brush=new SolidBrush(color))g.FillRectangle(brush,entry.Bounds);
+     using(var brush=new SolidBrush(entry.Unavailable?Color.FromArgb(217,48,37):Color.FromArgb(26,115,232)))g.FillRectangle(brush,entry.Bounds.X,entry.Bounds.Y,3,entry.Bounds.Height);
+     if(entry==selected)using(Pen pen=new Pen(Color.FromArgb(26,115,232),2))g.DrawRectangle(pen,entry.Bounds);
+     Rectangle text=new Rectangle(entry.Bounds.X+6,entry.Bounds.Y+3,Math.Max(1,entry.Bounds.Width-10),Math.Max(1,entry.Bounds.Height-6));
+          using(Font hoursFont=new Font("Segoe UI",8))TextRenderer.DrawText(g,entry.Hours.Replace(" – ","–"),hoursFont,new Rectangle(text.X,text.Y,text.Width,16),Color.FromArgb(32,33,36),TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+     string visual=Regex.Replace(entry.Title.Replace("[SDIS-BOT]","").Replace("📅","").Replace("❌",""),@"\s+"," ").Trim();
+     TextRenderer.DrawText(g,visual,eventFont,new Rectangle(text.X,text.Y+16,text.Width,Math.Max(1,text.Height-16)),Color.FromArgb(32,33,36),TextFormatFlags.WordBreak|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+    }
+    if(events.Count==0)TextRenderer.DrawText(g,"Libre",eventFont,new Rectangle(cell.X+6,cell.Y+37,cell.Width-10,22),Color.Gray,TextFormatFlags.NoPrefix);
+    if(conflict)using(Pen pen=new Pen(Color.FromArgb(234,134,0),2))g.DrawRectangle(pen,cell);
+    if(visible<events.Count)TextRenderer.DrawText(g,"+ "+(events.Count-visible)+" événement(s) • cliquer",eventFont,new Rectangle(cell.X+5,cell.Bottom-22,cell.Width-8,20),Color.FromArgb(26,115,232),TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+   }
+  }
+ }
+ void SelectEntry(object sender,MouseEventArgs args){
+  foreach(var entry in entries)if(!entry.Bounds.IsEmpty&&entry.Bounds.Contains(args.Location)){
+   selected=entry;selectedDay=entry.Day;detail.Text=ConflictText(entry.Day)+entry.Day.ToString("dddd dd MMMM yyyy",french)+"  •  "+entry.Hours+Environment.NewLine+entry.Title;canvas.Invalidate();return;
+  }
+  for(int index=0;index<28;index++)if(days[index].Contains(args.Location)){
+   selected=null;selectedDay=first.AddDays(index);var text=new StringBuilder(ConflictText(selectedDay)+selectedDay.ToString("dddd dd MMMM yyyy",french));
+   var events=ForDay(selectedDay);
+   if(events.Count==0)text.Append(Environment.NewLine+"Aucun événement prévu.");
+   foreach(var entry in events)text.Append(Environment.NewLine+Environment.NewLine+entry.Hours+Environment.NewLine+entry.Title);
+   detail.Text=text.ToString();canvas.Invalidate();return;
+  }
+ }
+ string hovered="";
+ void HoverEntry(object sender,MouseEventArgs args){
+  string text="";
+  foreach(var entry in entries)if(!entry.Bounds.IsEmpty&&entry.Bounds.Contains(args.Location)){text=ConflictText(entry.Day)+entry.Hours+Environment.NewLine+entry.Title;break;}
+  if(String.IsNullOrEmpty(text))for(int index=0;index<28;index++)if(days[index].Contains(args.Location)&&HasConflict(first.AddDays(index))){text=ConflictText(first.AddDays(index))+"Cliquez sur la date pour voir tous les événements.";break;}
+  if(text!=hovered){hovered=text;tooltip.SetToolTip(canvas,text);canvas.Cursor=String.IsNullOrEmpty(text)?Cursors.Default:Cursors.Hand;}
+ }
+ protected override void Dispose(bool disposing){if(disposing)tooltip.Dispose();base.Dispose(disposing);}
 }
