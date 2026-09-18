@@ -44,10 +44,8 @@ function compose(payload){
  const unavailable=changes.filter(x=>x.service==="Dendreo");
  const order=(a,b)=>a.date.localeCompare(b.date)||a.operation.localeCompare(b.operation);
  const guardLines=[...new Set(guards.sort(order).map(x=>`${dateFr(x.date)} : garde ${label(x.operation)}.`))];
- const unavailableLines=[...new Set(unavailable.sort(order).map(x=>`${dateFr(x.date)} : indisponibilité ${x.operation==="removed"?"supprimée":x.operation==="conflict"?"en conflit":x.operation==="updated"?"modifiée":"créée"}.`))];
  const sections=[];
  sections.push("GARDES AGATT\n"+(guardLines.join("\n")||"Aucune modification."));
- sections.push("INDISPONIBILITÉS DENDREO\n"+(unavailableLines.join("\n")||"Aucune modification."));
  if(payload.calendar&&payload.calendar.ok===true&&/^\d{4}-\d{2}-\d{2}$/.test(payload.calendar.from)&&Array.isArray(payload.calendar.events)){
   const mail=calendarMail(payload.calendar);
   const events=payload.calendar.events;

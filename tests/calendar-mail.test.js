@@ -12,7 +12,7 @@ test("email shows the final 28 days including both days of an unavailability",()
  assert.match(mail.body,/du 02\/10\/2026 au 03\/10\/2026/);assert.match(mail.body,/09:00 – 17:00/);
  assert.match(mail.html,/CONFLIT/);assert.match(mail.html,/#fce8e6/);assert.match(mail.html,/#d2e3fc/);
  assert.match(mail.html,/Formation &lt;PSC&gt; &amp; réunion/);
- assert.match(mail.body,/INDISPONIBILITÉS DENDREO\n02\/10\/2026 : indisponibilité créée\.\n02\/10\/2026 : indisponibilité supprimée\./);
+ assert.doesNotMatch(mail.body,/INDISPONIBILITÉS DENDREO|indisponibilité créée|indisponibilité supprimée/);
  assert.match(mail.body,/15\/10/);assert.doesNotMatch(mail.body,/16\/10/);
 });
 test("Gmail message contains readable text and HTML alternatives with intact accents",()=>{
@@ -28,8 +28,9 @@ test("recap precedes the calendar and conflicts are prominent in both mail forma
   {service:"Dendreo",operation:"removed",date:"2026-10-01"},
   {service:"Dendreo",operation:"added",date:"2026-10-02"}
  ]});
- assert.match(mail.body,/GARDES AGATT\n02\/10\/2026 : garde ajoutée\.\n\nINDISPONIBILITÉS DENDREO\n01\/10\/2026 : indisponibilité supprimée\.\n02\/10\/2026 : indisponibilité créée\./);
- assert.equal((mail.body.match(/indisponibilité créée/g)||[]).length,1);
+ assert.match(mail.body,/GARDES AGATT\n02\/10\/2026 : garde ajoutée\./);
+ assert.doesNotMatch(mail.body,/INDISPONIBILITÉS DENDREO|indisponibilité créée|indisponibilité supprimée/);
+ assert.doesNotMatch(mail.html,/INDISPONIBILITÉS DENDREO|indisponibilité créée|indisponibilité supprimée/);
  assert.ok(mail.body.indexOf("GARDES AGATT")<mail.body.indexOf("28 prochains jours"));
  assert.ok(mail.html.indexOf("GARDES AGATT")<mail.html.indexOf("<table"));
  assert.match(mail.subject,/ATTENTION : CONFLIT/);

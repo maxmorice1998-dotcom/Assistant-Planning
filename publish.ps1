@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="Correction des mails multiples lors des synchronisations : les synchronisations manuelles et automatiques ne déclenchent plus les anciens rapports techniques en attente. Seul le récapitulatif de la synchronisation ou son alerte en cas de problème est envoyé. Les anciens rapports restent conservés localement."
+$notes="Correction des mails multiples lors des synchronisations : les synchronisations manuelles et automatiques ne déclenchent plus les anciens rapports techniques en attente. Seul le récapitulatif de la synchronisation ou son alerte en cas de problème est envoyé. Les anciens rapports restent conservés localement. Suppression de la liste des créations et suppressions Dendreo dans les mails ; le récapitulatif des gardes, le calendrier et les avertissements de conflit sont conservés."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
