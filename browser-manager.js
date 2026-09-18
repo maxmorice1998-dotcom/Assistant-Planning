@@ -235,23 +235,6 @@ foreach($process in Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"){
   }catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:true,available:true,reason:"temporary_error"});}
  finally{if(browser)try{await browser.disconnect();}catch{}}
 }
-async function verifySession(kind){
- let current=await status(kind);
- if(current.available!==false||!current.lastConfirmed)return current;
- try{
-  const locks=require("./operation-lock");
-  for(const name of ["sync.lock","update.lock"])locks.ensureAvailable(rt.dataPath(name),name==="sync.lock"?"sync":"update");
-  await open(kind,{background:true});
-  const deadline=Date.now()+15000;let restored=false;
-  do{
-   current=await status(kind);
-   if(current.connected)return current;
-   if(kind==="agatt"&&current.reconnect&&!restored){restored=true;await reconnectAgatt();}
-   await new Promise(resolve=>setTimeout(resolve,250));
-  }while(Date.now()<deadline);
-  return current;
- }catch{return {...current,connected:false,reconnect:false,temporary:true,reason:"session_verification_unavailable"};}
-}
 async function reconnectAgatt(){
  rt.verifyBrowser("agatt");
  const browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports.agatt});
@@ -267,4 +250,4 @@ async function captureManualAgatt(){
   return async success=>{try{await finish(success);}finally{await browser.disconnect();}};
  }catch(error){await browser.disconnect();throw error;}
 }
-module.exports={open,inspect,status,verifySession,closeDedicated,reconnectAgatt,captureManualAgatt,normalizeWindowBounds,windowArguments};
+module.exports={open,inspect,status,closeDedicated,reconnectAgatt,captureManualAgatt,normalizeWindowBounds,windowArguments};

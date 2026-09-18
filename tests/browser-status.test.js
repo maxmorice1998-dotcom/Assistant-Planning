@@ -34,12 +34,6 @@ test("an old login tab cannot hide an authenticated Dendreo agenda",async()=>{
 test("network interruption needs another verification rather than a new login",async()=>{
  const status=await manager({networkError:true}).status("dendreo");assert.equal(status.connected,false);assert.equal(status.temporary,true);assert.equal(status.reconnect,false);
 });
-test("a remembered session is reopened in background and verified against the real agenda",async()=>{
- const status=await manager({missing:true}).verifySession("dendreo");assert.equal(status.connected,true);assert.equal(status.temporary,false);
-});
-test("session verification does not reopen a browser during an update or sync",async()=>{
- const status=await manager({missing:true,lockActive:true}).verifySession("dendreo");assert.equal(status.connected,false);assert.equal(status.available,false);assert.equal(status.temporary,true);
-});
 test("an old AGATT authentication tab does not hide a loaded planning",async()=>{
  const module={exports:{}};
  const pages=[{url:()=>"https://auth.sdis14.fr/login"},{url:()=>"https://agatt.sdis14.fr/register/index.php",evaluate:async()=>({url:"https://agatt.sdis14.fr/register/index.php",login:false,cells:28})}];
