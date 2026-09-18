@@ -17,6 +17,8 @@ $xml=@"
   <RegistrationInfo><Description>Synchronisation silencieuse Assistant Planning</Description></RegistrationInfo>
   <Triggers>
     <LogonTrigger><Enabled>true</Enabled><Delay>PT12S</Delay><UserId>$sid</UserId></LogonTrigger>
+    <SessionStateChangeTrigger><StateChange>SessionUnlock</StateChange><Enabled>true</Enabled><Delay>PT12S</Delay><UserId>$sid</UserId></SessionStateChangeTrigger>
+    <EventTrigger><Enabled>true</Enabled><Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[Provider[@Name="Microsoft-Windows-Power-Troubleshooter"] and EventID=1]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription><Delay>PT12S</Delay></EventTrigger>
   </Triggers>
   <Principals><Principal id="Author"><UserId>$sid</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><ExecutionTimeLimit>PT30M</ExecutionTimeLimit><Hidden>true</Hidden></Settings>

@@ -1,6 +1,6 @@
 Fabriquer l’installateur avec `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build-installer.ps1`.
 
-`INSTALLER Assistant Planning.exe` installe l’application pour le compte Windows courant dans `%LOCALAPPDATA%\Assistant Planning`. Il crée ou remplace la tâche `Assistant Planning - Synchronisation automatique`, déclenchée 12 secondes après l’ouverture de session de ce compte, sans privilèges administrateur ni mot de passe Windows.
+`INSTALLER Assistant Planning.exe` installe l’application pour le compte Windows courant dans `%LOCALAPPDATA%\Assistant Planning`. Il crée ou remplace la tâche `Assistant Planning - Synchronisation automatique`, déclenchée 12 secondes après l’ouverture de session, le déverrouillage ou la sortie de veille, sans privilèges administrateur ni mot de passe Windows.
 
 La tâche lance l’exécutable installé avec `--background-sync`. Cette option lance uniquement le moteur existant, sans interface ni console. Les navigateurs nécessaires sont ouverts en mode headless ; ceux ouverts par cette synchronisation sont fermés à la fin. Les profils, identifiants et configurations restent dans `%LOCALAPPDATA%\SDIS-Bot-Collegues`.
 
