@@ -40,14 +40,27 @@ function calendarMail(calendar){
 function compose(payload){
  const changes=Array.isArray(payload&&payload.changes)?payload.changes.filter(x=>x&&x.date&&label(x.operation)):[];
  if(!payload||payload.ok===false)return {subject:"Assistant Planning - synchronisation incomplète",body:"Synchronisation incomplète. Vérifiez l'application."};
- if(payload.calendar&&payload.calendar.ok===true&&/^\d{4}-\d{2}-\d{2}$/.test(payload.calendar.from)&&Array.isArray(payload.calendar.events))return calendarMail(payload.calendar);
- const guards=changes.filter(x=>x.service==="Google Agenda"&&["added","updated"].includes(x.operation));
+ const guards=changes.filter(x=>x.service==="Google Agenda"&&["added","updated","removed"].includes(x.operation));
  const unavailable=changes.filter(x=>x.service==="Dendreo");
- const guardLines=[...new Set(guards.map(x=>`${dateFr(x.date)} : garde ${x.operation==="updated"?"modifiée":"ajoutée"}.`))];
- const unavailableLines=[...new Set(unavailable.map(x=>`${dateFr(x.date)} : indisponibilité ${x.operation==="removed"?"supprimée":x.operation==="conflict"?"en conflit":"créée"}.`))];
+ const order=(a,b)=>a.date.localeCompare(b.date)||a.operation.localeCompare(b.operation);
+ const guardLines=[...new Set(guards.sort(order).map(x=>`${dateFr(x.date)} : garde ${label(x.operation)}.`))];
+ const unavailableLines=[...new Set(unavailable.sort(order).map(x=>`${dateFr(x.date)} : indisponibilité ${x.operation==="removed"?"supprimée":x.operation==="conflict"?"en conflit":x.operation==="updated"?"modifiée":"créée"}.`))];
  const sections=[];
- if(guardLines.length)sections.push("GARDES AGATT\n"+guardLines.join("\n"));
- if(unavailableLines.length)sections.push("INDISPONIBILITÉS DENDREO\n"+unavailableLines.join("\n"));
+ sections.push("GARDES AGATT\n"+(guardLines.join("\n")||"Aucune modification."));
+ sections.push("INDISPONIBILITÉS DENDREO\n"+(unavailableLines.join("\n")||"Aucune modification."));
+ if(payload.calendar&&payload.calendar.ok===true&&/^\d{4}-\d{2}-\d{2}$/.test(payload.calendar.from)&&Array.isArray(payload.calendar.events)){
+  const mail=calendarMail(payload.calendar);
+  const events=payload.calendar.events;
+  const conflictDates=[...new Set([...unavailable.filter(x=>x.operation==="conflict").map(x=>x.date),...events.filter(e=>e.indispo&&Array.isArray(e.dates)).flatMap(e=>e.dates.filter(date=>events.some(other=>!other.indispo&&Array.isArray(other.dates)&&other.dates.includes(date))))])].sort();
+  const warning=conflictDates.length?`ATTENTION : CONFLIT\nDates concernées : ${conflictDates.map(dateFr).join(", ")}.\n\n`:"";
+  const recap=warning+sections.join("\n\n");
+  mail.body=recap+"\n\n"+mail.body.replace(/^Synchronisation terminée\.\n\n/,"");
+  const recapHtml=sections.map(section=>{const [title,...lines]=section.split("\n");return `<h3>${escapeHtml(title)}</h3><p>${lines.map(escapeHtml).join("<br>")}</p>`;}).join("");
+  const banner=warning?`<div role="alert" style="padding:18px;border:3px solid #b3261e;background:#fce8e6;color:#b3261e"><strong style="font-size:28px">ATTENTION : CONFLIT</strong><p style="font-size:18px;font-weight:bold">Dates concernées : ${conflictDates.map(dateFr).join(", ")}.</p></div>`:"";
+  if(warning)mail.subject="Assistant Planning - ATTENTION : CONFLIT";
+  mail.html=mail.html.replace("<p>Synchronisation terminée.</p>",banner+recapHtml);
+  return mail;
+ }
  if(!sections.length)return {subject:"Assistant Planning - planning à jour",body:"Synchronisation terminée. Aucune modification de garde ou d'indisponibilité."};
  return {subject:"Assistant Planning - changements de planning",body:"Synchronisation terminée.\n\n"+sections.join("\n\n")};
 }
