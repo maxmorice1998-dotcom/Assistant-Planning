@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -34,7 +34,8 @@ internal static class Program {
    }
    Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
    using(MainForm form=new MainForm()){
-    if(args.Length==2 && args[0]=="--preview"){
+    if((args.Length==2 && args[0]=="--preview")||(args.Length==3 && args[0]=="--preview-calendar")){
+     if(args[0]=="--preview-calendar")form.PreviewCalendar(args[2]);
      form.Show();Application.DoEvents();
      using(Bitmap bitmap=new Bitmap(form.Width,form.Height)){
       form.DrawToBitmap(bitmap,new Rectangle(0,0,form.Width,form.Height));
@@ -63,7 +64,8 @@ internal sealed class MainForm:Form {
  readonly Label busySpinner=new Label(),busyText=new Label(),progressDetail=new Label(),progressCounters=new Label(),progressDuration=new Label();
  readonly ProgressBar syncProgress=new ProgressBar();
  readonly Panel calendarPreview=new Panel();
- readonly DataGridView calendarGrid=new DataGridView();
+ readonly Dictionary<Control,bool> calendarVisibility=new Dictionary<Control,bool>();
+
  readonly Timer busyTimer=new Timer();
  readonly Timer progressTimer=new Timer();
  DateTime syncStartedAt;
@@ -96,7 +98,6 @@ internal sealed class MainForm:Form {
    buildInfo.Text=BuildLabel();buildInfo.SetBounds(34,760,570,24);buildInfo.ForeColor=Color.FromArgb(120,128,132);buildInfo.Font=new Font("Segoe UI",9);Controls.Add(buildInfo);
    lastCheck.Visible=false;status.Visible=false;buildInfo.Visible=true;
   calendarPreview.Bounds=new Rectangle(34,148,570,650);calendarPreview.BackColor=Color.White;calendarPreview.BorderStyle=BorderStyle.FixedSingle;calendarPreview.Visible=false;Controls.Add(calendarPreview);
-  calendarGrid.Bounds=new Rectangle(10,42,548,640);calendarGrid.ReadOnly=true;calendarGrid.AllowUserToAddRows=false;calendarGrid.AllowUserToDeleteRows=false;calendarGrid.RowHeadersVisible=false;calendarGrid.AutoGenerateColumns=false;calendarGrid.BackgroundColor=Color.White;calendarGrid.SelectionMode=DataGridViewSelectionMode.FullRowSelect;calendarGrid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Date",Width=92});calendarGrid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Heure",Width=92});calendarGrid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Événement Dendreo",AutoSizeMode=DataGridViewAutoSizeColumnMode.Fill});calendarPreview.Controls.Add(calendarGrid);
   busyPanel.Bounds=new Rectangle(34,190,570,340);busyPanel.BackColor=Color.FromArgb(250,250,249);busyPanel.Visible=false;
   busySpinner.Bounds=new Rectangle(235,112,100,70);busySpinner.Font=new Font("Segoe UI",36,FontStyle.Regular);busySpinner.ForeColor=Color.FromArgb(232,35,42);busySpinner.TextAlign=ContentAlignment.MiddleCenter;
    busyText.Bounds=new Rectangle(40,190,490,42);busyText.Font=new Font("Segoe UI",12,FontStyle.Bold);busyText.ForeColor=Color.FromArgb(3,46,66);busyText.TextAlign=ContentAlignment.MiddleCenter;
@@ -212,7 +213,7 @@ internal sealed class MainForm:Form {
       var calendar=await Task.Run(()=>Request(new Dictionary<string,object>{{"action","dendreo-calendar"}}));
       if(Flag(calendar,"ok"))ShowDendreoCalendarScreen(calendar);
       else status.Text+="\nCalendrier Dendreo indisponible.";
-     }catch{calendarPreview.Visible=true;calendarPreview.BringToFront();status.Text+="\nCalendrier Dendreo indisponible.";}
+     }catch{ShowError("Calendrier Dendreo indisponible. Reessayez la synchronisation.");}
     }
    }else status.Text="Terminez la connexion dans votre navigateur.";
  }catch(Exception error){ReportClientException(action,error.Message);ShowError(action=="google"?"Connexion impossible : verifiez votre connexion Internet puis reessayez.":((action=="open-agatt"||action=="open-dendreo")?"Connexion impossible : la fenetre de connexion n'a pas pu etre verifiee. Reessayez.":"La verification est indisponible. Relancez Assistant Planning puis reessayez."));}
@@ -244,65 +245,67 @@ void RefreshStatusInBackground(){
    },TaskScheduler.Default);
  }
  void ShowDendreoCalendarScreen(Dictionary<string,object> response){
-  calendarPreview.Controls.Clear();calendarPreview.Visible=true;calendarPreview.BringToFront();
-  calendarPreview.Bounds=new Rectangle(34,148,500,650);
-  calendarPreview.Controls.Add(new Label{Text="Calendrier Dendreo - 28 prochains jours",Font=new Font("Segoe UI",12,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(10,10)});
-  calendarPreview.Controls.Add(new Label{Text=Convert.ToString(response["from"])+" au "+Convert.ToString(response["to"]),Font=new Font("Segoe UI",8),ForeColor=Color.FromArgb(94,107,113),AutoSize=true,Location=new Point(10,37)});
-  DateTime first=DateTime.ParseExact(Convert.ToString(response["from"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);var byDate=new Dictionary<string,List<Dictionary<string,object>>>();
-  foreach(object value in Values(response.ContainsKey("events")?response["events"]:null)){var ev=value as Dictionary<string,object>;if(ev==null)continue;foreach(object date in Values(ev.ContainsKey("dates")?ev["dates"]:null)){string key=Convert.ToString(date);if(!byDate.ContainsKey(key))byDate[key]=new List<Dictionary<string,object>>();byDate[key].Add(ev);}}
-  TableLayoutPanel table=new TableLayoutPanel{Bounds=new Rectangle(8,65,480,570),ColumnCount=7,RowCount=4,CellBorderStyle=TableLayoutPanelCellBorderStyle.None,BackColor=Color.White};for(int c=0;c<7;c++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,14.2857f));for(int r=0;r<4;r++)table.RowStyles.Add(new RowStyle(SizeType.Percent,25f));
-  for(int i=0;i<28;i++){DateTime date=first.AddDays(i);string key=date.ToString("yyyy-MM-dd");Panel cell=new Panel{Dock=DockStyle.Fill,Margin=new Padding(1),BackColor=Color.White,BorderStyle=BorderStyle.FixedSingle};cell.Controls.Add(new Label{Text=date.ToString("ddd dd/MM"),Dock=DockStyle.Top,Height=24,Font=new Font("Segoe UI",8,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Padding=new Padding(3,2,0,0)});FlowLayoutPanel list=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=false,Padding=new Padding(2),BackColor=Color.Transparent};var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);if(byDate.ContainsKey(key))foreach(var ev in byDate[key]){string text=Convert.ToString(ev.ContainsKey("text")?ev["text"]:"").Replace("\r"," ").Replace("\n"," ").Trim();bool bot=(ev.ContainsKey("botOwned")&&Convert.ToBoolean(ev["botOwned"]))||text.IndexOf("[SDIS-BOT]",StringComparison.OrdinalIgnoreCase)>=0;string type=CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"]));var dates=Values(ev.ContainsKey("dates")?ev["dates"]:null) as List<object> ?? new List<object>();if(bot)type=(dates.Count>1&&key!=Convert.ToString(dates[0]))?"Repos compensatoire":"Garde";string shown=bot?type:text.Replace("📅","").Replace("❌","").Trim();shown=Regex.Replace(shown,@"\s*\([12]/2\)","");shown=Regex.Replace(shown,@"\s*-\s*(matin|après-midi)$","",RegexOptions.IgnoreCase).Trim();shown=ShortCalendarText(String.IsNullOrWhiteSpace(shown)?type:shown,16);if(!seen.Add(shown))continue;cell.BackColor=CalendarEventColor(type);list.Controls.Add(new Label{Text=shown,Width=74,Height=20,Font=new Font("Segoe UI",7),ForeColor=Color.FromArgb(3,46,66),BackColor=Color.Transparent});}cell.Controls.Add(list);if(byDate.ContainsKey(key))cell.Controls.Add(new Label{Text=CalendarCellText(byDate[key],key),Dock=DockStyle.Fill,ForeColor=Color.FromArgb(3,46,66),BackColor=Color.Transparent,Font=new Font("Segoe UI",7),Padding=new Padding(3,25,2,2)});table.Controls.Add(cell,i%7,i/7);}
-  calendarPreview.Controls.Add(table);
- }
- void ShowDendreoCalendarSimple(Dictionary<string,object> response){
+  calendarPreview.SuspendLayout();
+  if(!calendarPreview.Visible){calendarVisibility.Clear();foreach(Control control in Controls){if(control!=calendarPreview&&control.Top>=148){calendarVisibility[control]=control.Visible;control.Visible=false;}}}
+  while(calendarPreview.Controls.Count>0)calendarPreview.Controls[0].Dispose();
+  calendarPreview.Bounds=new Rectangle(34,148,ClientSize.Width-68,ClientSize.Height-172);
+  calendarPreview.Anchor=AnchorStyles.Top|AnchorStyles.Bottom|AnchorStyles.Left|AnchorStyles.Right;
+  calendarPreview.Padding=new Padding(12);
+  Panel heading=new Panel{Dock=DockStyle.Top,Height=94};
+  Button back=new Button{Text="Retour",Dock=DockStyle.Right,Width=80};
+  back.Click+=(sender,args)=>{calendarPreview.Visible=false;foreach(var entry in calendarVisibility)entry.Key.Visible=entry.Value;foreach(Button button in buttons)button.Visible=true;reposCheck.Visible=true;};
+  heading.Controls.Add(back);
+  heading.Controls.Add(new Label{Text="Agenda Dendreo",AutoSize=true,Font=new Font("Segoe UI",14,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Location=new Point(0,0)});
   DateTime first=DateTime.ParseExact(Convert.ToString(response["from"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+  DateTime last=DateTime.ParseExact(Convert.ToString(response["to"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+  heading.Controls.Add(new Label{Text=first.ToString("dd/MM/yyyy")+" au "+last.ToString("dd/MM/yyyy"),AutoSize=true,Location=new Point(0,34),Font=new Font("Segoe UI",10),ForeColor=Color.DimGray});
+  heading.Controls.Add(new Label{Text="Intitulés complets et horaires • faites défiler pour voir la suite",AutoSize=true,Location=new Point(0,61),Font=new Font("Segoe UI",9),ForeColor=Color.DimGray});
+  DataGridView grid=new DataGridView{Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AllowUserToDeleteRows=false,AllowUserToResizeRows=false,RowHeadersVisible=false,AutoGenerateColumns=false,BackgroundColor=Color.White,BorderStyle=BorderStyle.None,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false,AutoSizeRowsMode=DataGridViewAutoSizeRowsMode.AllCells,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill,ScrollBars=ScrollBars.Vertical,ColumnHeadersHeightSizeMode=DataGridViewColumnHeadersHeightSizeMode.AutoSize};
+  grid.DefaultCellStyle.Font=new Font("Segoe UI",10);
+  grid.DefaultCellStyle.WrapMode=DataGridViewTriState.True;
+  grid.DefaultCellStyle.Padding=new Padding(7);
+  grid.DefaultCellStyle.ForeColor=Color.FromArgb(3,46,66);
+  grid.DefaultCellStyle.SelectionBackColor=Color.FromArgb(220,235,244);
+  grid.DefaultCellStyle.SelectionForeColor=Color.FromArgb(3,46,66);
+  grid.DefaultCellStyle.Alignment=DataGridViewContentAlignment.TopLeft;
+  grid.ColumnHeadersDefaultCellStyle.Font=new Font("Segoe UI",10,FontStyle.Bold);
+  grid.EnableHeadersVisualStyles=false;
+  grid.ColumnHeadersDefaultCellStyle.BackColor=Color.FromArgb(240,244,246);
+  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Date",FillWeight=25,MinimumWidth=100,SortMode=DataGridViewColumnSortMode.NotSortable});
+  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Horaires",FillWeight=22,MinimumWidth=95,SortMode=DataGridViewColumnSortMode.NotSortable});
+  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Prévu dans Dendreo",FillWeight=65,MinimumWidth=160,SortMode=DataGridViewColumnSortMode.NotSortable});
   var byDate=new Dictionary<string,List<Dictionary<string,object>>>();
-  foreach(object value in Values(response.ContainsKey("events")?response["events"]:null)){var ev=value as Dictionary<string,object>;if(ev==null)continue;foreach(object date in Values(ev.ContainsKey("dates")?ev["dates"]:null)){string key=Convert.ToString(date);if(!byDate.ContainsKey(key))byDate[key]=new List<Dictionary<string,object>>();byDate[key].Add(ev);}}
-  Form page=new Form{Text="Calendrier Dendreo",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(920,700),MinimumSize=new Size(920,700),BackColor=Color.White};
-  page.Controls.Add(new Label{Text="Calendrier Dendreo - 28 prochains jours",Font=new Font("Segoe UI",18,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(24,18)});
-  page.Controls.Add(new Label{Text=Convert.ToString(response["from"])+" au "+Convert.ToString(response["to"]),Font=new Font("Segoe UI",10),ForeColor=Color.FromArgb(94,107,113),AutoSize=true,Location=new Point(26,52)});
-  TableLayoutPanel table=new TableLayoutPanel{Bounds=new Rectangle(24,86,872,570),ColumnCount=7,RowCount=4,CellBorderStyle=TableLayoutPanelCellBorderStyle.None,BackColor=Color.White};
-  for(int c=0;c<7;c++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,14.2857f));for(int r=0;r<4;r++)table.RowStyles.Add(new RowStyle(SizeType.Percent,25f));
-  for(int i=0;i<28;i++){DateTime date=first.AddDays(i);string key=date.ToString("yyyy-MM-dd");Panel cell=new Panel{Dock=DockStyle.Fill,Margin=new Padding(2),BackColor=Color.White,BorderStyle=BorderStyle.FixedSingle};cell.Controls.Add(new Label{Text=date.ToString("ddd dd/MM"),Dock=DockStyle.Top,Height=26,Font=new Font("Segoe UI",8,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Padding=new Padding(3,3,0,0)});FlowLayoutPanel list=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=false,Padding=new Padding(3,2,2,2),BackColor=Color.Transparent};var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);if(byDate.ContainsKey(key))foreach(var ev in byDate[key]){string text=Convert.ToString(ev.ContainsKey("text")?ev["text"]:"").Replace("\r"," ").Replace("\n"," ").Trim();bool bot=(ev.ContainsKey("botOwned")&&Convert.ToBoolean(ev["botOwned"]))||text.IndexOf("[SDIS-BOT]",StringComparison.OrdinalIgnoreCase)>=0;string type=CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"]));var dates=Values(ev.ContainsKey("dates")?ev["dates"]:null) as List<object> ?? new List<object>();if(bot)type=(dates.Count>1&&key!=Convert.ToString(dates[0]))?"Repos compensatoire":"Garde";string shown=bot?type:text.Replace("📅","").Replace("❌","").Trim();shown=Regex.Replace(shown,@"\s*\([12]/2\)","");shown=Regex.Replace(shown,@"\s*-\s*(matin|après-midi)$","",RegexOptions.IgnoreCase).Trim();shown=ShortCalendarText(String.IsNullOrWhiteSpace(shown)?type:shown,14);if(!seen.Add(shown))continue;cell.BackColor=CalendarEventColor(type);list.Controls.Add(new Label{Text=shown,Width=62,Height=22,Font=new Font("Segoe UI",7),ForeColor=Color.FromArgb(3,46,66),BackColor=Color.Transparent});}cell.Controls.Add(list);table.Controls.Add(cell,i%7,i/7);}
-  page.Controls.Add(table);page.Show(this);
- }
- void ShowDendreoCalendar(Dictionary<string,object> response){
-  calendarPreview.Controls.Clear();
-  calendarPreview.Visible=true;calendarPreview.BringToFront();
-  Label previewTitle=new Label{Text="Calendrier Dendreo - 28 prochains jours",Font=new Font("Segoe UI",11,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(10,10)};calendarPreview.Controls.Add(previewTitle);
-  Label previewPeriod=new Label{Text=Convert.ToString(response["from"])+" au "+Convert.ToString(response["to"]),Font=new Font("Segoe UI",8),ForeColor=Color.FromArgb(94,107,113),AutoSize=true,Location=new Point(10,34)};calendarPreview.Controls.Add(previewPeriod);
-  DateTime first=DateTime.ParseExact(Convert.ToString(response["from"]),"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
-  var eventsByDate=new Dictionary<string,List<Dictionary<string,object>>>();
-  foreach(object value in Values(response.ContainsKey("events")?response["events"]:null)){var ev=value as Dictionary<string,object>;if(ev==null)continue;foreach(object date in Values(ev.ContainsKey("dates")?ev["dates"]:null)){string key=Convert.ToString(date);if(!eventsByDate.ContainsKey(key))eventsByDate[key]=new List<Dictionary<string,object>>();eventsByDate[key].Add(ev);}}
-  int offset=0;int rows=(28+6)/7;TableLayoutPanel table=new TableLayoutPanel{Bounds=new Rectangle(8,62,554,575),ColumnCount=7,RowCount=rows,CellBorderStyle=TableLayoutPanelCellBorderStyle.None,BackColor=Color.White};
-  for(int c=0;c<7;c++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,14.2857f));for(int r=0;r<rows;r++)table.RowStyles.Add(new RowStyle(SizeType.Percent,100f/rows));
-  for(int slot=0;slot<rows*7;slot++){int dayIndex=slot-offset;Panel cell=new Panel{Dock=DockStyle.Fill,Margin=new Padding(1),BackColor=Color.White};if(dayIndex>=0&&dayIndex<28){cell.BorderStyle=BorderStyle.FixedSingle;DateTime date=first.AddDays(dayIndex);string key=date.ToString("yyyy-MM-dd");Label day=new Label{Text=date.ToString("ddd dd"),Dock=DockStyle.Top,Height=24,Font=new Font("Segoe UI",8,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),Padding=new Padding(3,2,0,0)};cell.Controls.Add(day);FlowLayoutPanel list=new FlowLayoutPanel{Dock=DockStyle.Fill,FlowDirection=FlowDirection.TopDown,WrapContents=false,AutoScroll=false,Padding=new Padding(2,0,2,2),BackColor=Color.Transparent};HashSet<string> seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);if(eventsByDate.ContainsKey(key))foreach(var ev in eventsByDate[key]){string text=Convert.ToString(ev.ContainsKey("text")?ev["text"]:"").Replace("\r"," ").Replace("\n"," ").Trim();bool bot=(ev.ContainsKey("botOwned")&&Convert.ToBoolean(ev["botOwned"]))||text.IndexOf("[SDIS-BOT]",StringComparison.OrdinalIgnoreCase)>=0;string type=CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"]));List<object> dates=Values(ev.ContainsKey("dates")?ev["dates"]:null) as List<object> ?? new List<object>();if(bot){type=(dates.Count>1&&key!=Convert.ToString(dates[0]))?"Repos compensatoire":"Garde";}string shown=bot?type:text.Replace("📅","").Replace("❌","").Trim();shown=Regex.Replace(shown,@"\s*\([12]/2\)","");shown=Regex.Replace(shown,@"\s*-\s*(matin|après-midi)$","",RegexOptions.IgnoreCase).Trim();shown=ShortCalendarText(shown,18);if(String.IsNullOrWhiteSpace(shown))shown=type;if(!seen.Add(shown))continue;cell.BackColor=CalendarEventColor(type);Label item=new Label{Text=shown,Width=74,Height=20,Font=new Font("Segoe UI",7f),ForeColor=Color.FromArgb(3,46,66),BackColor=Color.Transparent,Margin=new Padding(0,1,0,1),AutoEllipsis=false};list.Controls.Add(item);}cell.Controls.Add(list);cell.Controls.Add(new Label{Text=CalendarCellText(eventsByDate[key],key),Dock=DockStyle.Fill,ForeColor=Color.FromArgb(3,46,66),BackColor=Color.Transparent,Font=new Font("Segoe UI",7f),AutoEllipsis=false,Padding=new Padding(3,25,2,2)});}table.Controls.Add(cell,slot%7,slot/7);}
-  calendarPreview.Controls.Add(table);
-  calendarPreview.Visible=true;calendarPreview.BringToFront();
-  return;
-  Form page=new Form{Text="Dendreo - calendrier des 31 prochains jours",StartPosition=FormStartPosition.CenterParent,ClientSize=new Size(900,620),MinimumSize=new Size(700,420),BackColor=Color.White};
-  Label title=new Label{Text="Événements Dendreo",Font=new Font("Segoe UI",18,FontStyle.Bold),ForeColor=Color.FromArgb(3,46,66),AutoSize=true,Location=new Point(22,18)};page.Controls.Add(title);
-  Label period=new Label{Text="Tous les événements du "+Convert.ToString(response["from"])+" au "+Convert.ToString(response["to"]),Font=new Font("Segoe UI",10),ForeColor=Color.FromArgb(94,107,113),AutoSize=true,Location=new Point(24,55)};page.Controls.Add(period);
-  DataGridView grid=new DataGridView{Bounds=new Rectangle(22,88,856,500),ReadOnly=true,AllowUserToAddRows=false,AllowUserToDeleteRows=false,AllowUserToResizeRows=false,RowHeadersVisible=false,AutoGenerateColumns=false,BackgroundColor=Color.White,BorderStyle=BorderStyle.FixedSingle,SelectionMode=DataGridViewSelectionMode.FullRowSelect,MultiSelect=false};
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Date",Width=125});
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Horaire",Width=125});
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Événement Dendreo",AutoSizeMode=DataGridViewAutoSizeColumnMode.Fill});
-  grid.Columns.Add(new DataGridViewTextBoxColumn{HeaderText="Type",Width=145});
-  object raw=response.ContainsKey("events")?response["events"]:null;
-  foreach(object value in Values(raw)){
+  foreach(object value in Values(response.ContainsKey("events")?response["events"]:null)){
    var ev=value as Dictionary<string,object>;if(ev==null)continue;
-   string text=Convert.ToString(ev.ContainsKey("text")?ev["text"]:"");
-   string type=CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"]));
-   string hours=Convert.ToString(ev.ContainsKey("startTime")?ev["startTime"]:"");
-   string end=Convert.ToString(ev.ContainsKey("endTime")?ev["endTime"]:"");
-   if(!String.IsNullOrWhiteSpace(end)&&end!="00:00")hours+=" - "+end;
-   foreach(object date in Values(ev.ContainsKey("dates")?ev["dates"]:null)){int row=grid.Rows.Add(Convert.ToString(date),hours,text,type);grid.Rows[row].DefaultCellStyle.BackColor=CalendarEventColor(type);}
+   foreach(object valueDate in Values(ev.ContainsKey("dates")?ev["dates"]:null)){
+    string key=Convert.ToString(valueDate);
+    if(!byDate.ContainsKey(key))byDate[key]=new List<Dictionary<string,object>>();
+    byDate[key].Add(ev);
+   }
   }
-  if(grid.Rows.Count==0){int row=grid.Rows.Add("","","Aucun événement Dendreo sur cette période.","");grid.Rows[row].DefaultCellStyle.ForeColor=Color.Gray;}
-  page.Controls.Add(grid);page.Show(this);
+  var french=System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
+  for(DateTime day=first;day<=last;day=day.AddDays(1)){
+   string key=day.ToString("yyyy-MM-dd"),date=day.ToString("ddd dd/MM",french);
+   if(!byDate.ContainsKey(key)){
+    int empty=grid.Rows.Add(date,"—","Aucun événement prévu");
+    grid.Rows[empty].DefaultCellStyle.ForeColor=Color.Gray;continue;
+   }
+   byDate[key].Sort((left,right)=>String.CompareOrdinal(CalendarValue(left,"startTime"),CalendarValue(right,"startTime")));
+   foreach(var ev in byDate[key]){
+    string text=CalendarValue(ev,"text"),start=CalendarValue(ev,"startTime"),end=CalendarValue(ev,"endTime");
+    string hours=start=="00:00"&&end=="00:00"?"Toute la journée":start+" – "+end;
+    int row=grid.Rows.Add(date,hours,String.IsNullOrWhiteSpace(text)?"Événement sans intitulé":text);
+    grid.Rows[row].DefaultCellStyle.BackColor=CalendarEventColor(CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"])));
+   }
   }
- string CalendarCellText(List<Dictionary<string,object>> events,string date){var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var labels=new List<string>();foreach(var ev in events??new List<Dictionary<string,object>>()){string text=Convert.ToString(ev.ContainsKey("text")?ev["text"]:"").Replace("\r"," ").Replace("\n"," ").Trim();bool bot=(ev.ContainsKey("botOwned")&&Convert.ToBoolean(ev["botOwned"]))||text.IndexOf("[SDIS-BOT]",StringComparison.OrdinalIgnoreCase)>=0;string type=CalendarEventType(text,ev.ContainsKey("indispo")&&Convert.ToBoolean(ev["indispo"]));List<object> dates=Values(ev.ContainsKey("dates")?ev["dates"]:null) as List<object> ?? new List<object>();if(bot)type=(dates.Count>1&&date!=Convert.ToString(dates[0]))?"Repos compensatoire":"Garde";string shown=bot?type:text.Replace("📅","").Replace("❌","").Trim();shown=Regex.Replace(shown,@"\s*\([12]/2\)","");shown=Regex.Replace(shown,@"\s*-\s*(matin|après-midi)$","",RegexOptions.IgnoreCase).Trim();shown=ShortCalendarText(String.IsNullOrWhiteSpace(shown)?type:shown,18);if(seen.Add(shown))labels.Add(shown);}return String.Join("\n",labels);}
- string ShortCalendarText(string value,int length){string text=(value??"").Trim();if(text.Length<=length)return text;return text.Substring(0,Math.Max(1,length-1))+"…";}
+  calendarPreview.Controls.Add(grid);
+  calendarPreview.Controls.Add(heading);
+  calendarPreview.Visible=true;calendarPreview.BringToFront();
+  calendarPreview.ResumeLayout(true);
+  grid.ClearSelection();
+ }
+ public void PreviewCalendar(string file){ShowDendreoCalendarScreen(json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file,Encoding.UTF8)));}
+ string CalendarValue(Dictionary<string,object> ev,string key){return Convert.ToString(ev.ContainsKey(key)?ev[key]:"");}
  IEnumerable Values(object value){
   var list=new List<object>();var items=value as IEnumerable;
   if(items!=null&&!(value is string))foreach(object item in items)list.Add(item);
@@ -326,7 +329,7 @@ void RefreshStatusInBackground(){
   }
  string BusyMessage(string action){if(action=="startup")return "Recherche de mise a jour...";if(action=="google")return "Connexion a Google...";if(action=="open-agatt")return "Connexion a AGATT...";if(action=="open-dendreo")return "Connexion a Dendreo...";if(action=="synchronize")return "Synchronisation en cours...";return "Verification en cours...";}
  void PollProgress(){if(!syncProgressMode)return;try{string file=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SDIS-Bot-Collegues","sync-progress.json");if(!File.Exists(file))return;var p=json.Deserialize<Dictionary<string,object>>(File.ReadAllText(file,Encoding.UTF8));if(p==null||!String.Equals(Convert.ToString(p.ContainsKey("mode")?p["mode"]:""),"sync",StringComparison.OrdinalIgnoreCase))return;if(p.ContainsKey("percent")){int n=Math.Max(0,Math.Min(100,Convert.ToInt32(p["percent"])));syncProgress.Value=n;busyText.Text="Synchronisation en cours — "+n+" %";}if(p.ContainsKey("message")&&!String.IsNullOrWhiteSpace(Convert.ToString(p["message"])))progressDetail.Text=Convert.ToString(p["message"]);if(p.ContainsKey("detail"))progressCounters.Text=Convert.ToString(p["detail"]);if(syncStartedAt!=DateTime.MinValue)progressDuration.Text="Durée : "+(DateTime.Now-syncStartedAt).TotalSeconds.ToString("0.0")+" secondes";}catch{}}
- void SetBusy(bool value,string message,bool showProgress){busy=value;syncProgressMode=value&&showProgress;busyText.Text=message;busyPanel.Visible=syncProgressMode;syncProgress.Visible=syncProgressMode;progressDetail.Visible=syncProgressMode;progressCounters.Visible=syncProgressMode;progressDuration.Visible=syncProgressMode;if(value){syncStartedAt=DateTime.Now;syncProgress.Value=0;progressDetail.Text="";progressCounters.Text="";progressDuration.Text="";busyTimer.Tag=0;busySpinner.Text="|";busyTimer.Start();if(syncProgressMode){progressTimer.Start();busyPanel.BringToFront();}}else{busyTimer.Stop();progressTimer.Stop();busyPanel.Visible=false;}foreach(Button b in buttons){b.Visible=!value;b.Enabled=!value;}reposCheck.Visible=!value;reposCheck.Enabled=!value;}
+ void SetBusy(bool value,string message,bool showProgress){busy=value;syncProgressMode=value&&showProgress;busyText.Text=message;busyPanel.Visible=syncProgressMode;syncProgress.Visible=syncProgressMode;progressDetail.Visible=syncProgressMode;progressCounters.Visible=syncProgressMode;progressDuration.Visible=syncProgressMode;if(value){syncStartedAt=DateTime.Now;syncProgress.Value=0;progressDetail.Text="";progressCounters.Text="";progressDuration.Text="";busyTimer.Tag=0;busySpinner.Text="|";busyTimer.Start();if(syncProgressMode){progressTimer.Start();busyPanel.BringToFront();}}else{busyTimer.Stop();progressTimer.Stop();busyPanel.Visible=false;}foreach(Button b in buttons){b.Visible=!value&&!calendarPreview.Visible;b.Enabled=!value;}reposCheck.Visible=!value&&!calendarPreview.Visible;reposCheck.Enabled=!value;}
  void ShowError(string message){
   status.ForeColor=Color.Firebrick;status.Text=message;
   MessageBox.Show(this,message,"Assistant Planning",MessageBoxButtons.OK,MessageBoxIcon.Warning);
