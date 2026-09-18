@@ -11,9 +11,8 @@ async function waitForBrowserConnection(kind, timeoutMs=240000,windowBounds=null
  while(Date.now()<deadline){
   last=await manager.status(kind);
   if(last.connected===true){
-   // Le succès est déjà confirmé : inspection et fermeture du profil dédié
-   // restent en arrière-plan pour ne pas retarder l'actualisation visuelle.
-   Promise.resolve().then(()=>manager.inspect(kind)).catch(()=>{}).then(()=>manager.closeDedicated(kind)).catch(()=>{});
+   // La session est validée : fermeture immédiate de la fenêtre dédiée.
+   Promise.resolve().then(()=>manager.closeDedicated(kind)).catch(()=>{});
    return {ok:true,message:kind==="agatt"?"AGATT connecte":"Dendreo connecte",status:last};
   }
   await new Promise(resolve=>setTimeout(resolve,250));
@@ -87,6 +86,8 @@ async function handle(req){
  }
  case "google":{
   try {
+   const current=await require("./google-oauth-v2").status();
+   if(current.connected)return {ok:true,message:"Google deja connecte",alreadyConnected:true};
    const result=await require("./google-oauth-v2").connectGoogle({windowBounds:req.windowBounds});
    const message="✅ Google connecté";
    return {ok:true,message};
@@ -109,10 +110,28 @@ async function handle(req){
   try {
    const result=await require("./colleague-runner").run({dryRun:false});
    if(result.ok)diagnostic.flushPending();
-    const mailMessage=result.mailStatus&&result.mailStatus.message?"\n"+result.mailStatus.message:"";return {ok:result.ok,message:result.ok?"? Synchronisation termin?e."+mailMessage:"Synchronisation interrompue.",results:result.results,durationMs:result.durationMs,summary:result.summary,mailStatus:result.mailStatus||null};
+    const mailMessage=result.mailStatus&&result.mailStatus.message?"\n"+result.mailStatus.message:"";return {ok:result.ok,message:result.ok?"Synchronisation terminee."+mailMessage:"Synchronisation interrompue.",results:result.results,durationMs:result.durationMs,summary:result.summary,mailStatus:result.mailStatus||null};
   } catch(error) {
    return {ok:false,message:"Synchronisation impossible : "+safeDiagnostic(error&&error.message),results:[]};
   }
+ }
+ case "dendreo-calendar":{
+  const manager=require("./browser-manager");
+  const status=await manager.status("dendreo");
+  if(!status.connected)throw new Error("Dendreo : connexion requise.");
+  const puppeteer=require("puppeteer");
+  const state=require("./dendreo-state");
+  const syncDendreo=require("./sync-dendreo");
+  const browser=await puppeteer.connect({browserURL:"http://127.0.0.1:"+rt.ports.dendreo});
+  try{
+   const page=await syncDendreo.findDendreoPage(browser);
+   if(!page)throw new Error("Agenda Dendreo absent.");
+   const today=new Date();
+   const iso=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${day}`;};
+   const from=iso(today),endDate=new Date(today);endDate.setDate(endDate.getDate()+27);
+   const events=await state.readEvents(page,from,iso(endDate));
+   return {ok:true,from,to:iso(endDate),events:events.map(e=>({id:e.id,dates:e.dates,text:e.text,startTime:e.startTime,endTime:e.endTime,indispo:e.indispo,botOwned:e.botOwned}))};
+  }finally{await browser.disconnect();}
  }
  case "update-check":{
   const result=await require("./update-client").check();

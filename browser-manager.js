@@ -97,14 +97,15 @@ exit 1`;
   const background=options&&options.background===true;
  if(!urls[kind])throw new Error("Connexion inconnue.");rt.initialize();
  if(!background){const locks=require('./operation-lock');for(const name of ['sync.lock','update.lock'])locks.ensureAvailable(rt.dataPath(name),name==='update.lock'?'update':'sync');}
- const existingWindow=background?1:focusDedicatedWindow(kind,options&&options.windowBounds);
+ let existingWindow=background?1:0;
  let reopening=false;
  if(await occupied(rt.ports[kind])){
   rt.verifyBrowser(kind);
+  if(!background)existingWindow=focusDedicatedWindow(kind,options&&options.windowBounds);
   if(!background&&existingWindow===2){
    if(!await closeDedicated(kind))throw new Error("Impossible de fermer la session invisible pour vous reconnecter.");
    await waitForPort(rt.ports[kind],8000);
-   if(await occupied(rt.ports[kind]))throw new Error("Le navigateur termine sa fermeture. Réessayez dans quelques secondes.");
+   if(await occupied(rt.ports[kind]))return "";
    reopening=true;
   }else{if(!background&&existingWindow!==0)focusDedicatedWindow(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
  }

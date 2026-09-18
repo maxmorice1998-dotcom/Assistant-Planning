@@ -2,6 +2,8 @@ const runtime = require("./runtime-config");
 runtime.prepare();
 const fs = require("fs");
 const { writeExecutionSnapshot } = require("./sdis-utils");
+const agattView = require("./agatt-view");
+const planningModel = require("./planning-model");
 const puppeteer = require("./browser-client");
 const { google } = require("googleapis");
 const nodemailer = require("nodemailer");
@@ -102,7 +104,7 @@ function activeDateWindow() {
   const end = new Date(start);
   end.setMonth(end.getMonth() + (Number.isFinite(monthsAhead) && monthsAhead >= 0 ? monthsAhead : 6));
   const raw = d => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  return { start: raw(start), end: raw(end) };
+  return { start: raw(start), end: raw(end), year: end.getFullYear() };
 }
 
 function dateInActiveWindow(raw, window) {
@@ -126,7 +128,7 @@ function comparableDescription(value) {
 }
 
 function typeEvenement(code) {
-  if (code === "G") return "Garde SDIS ";
+  if (code === "G" || code === "J" || code === "N") return "Garde SDIS ";
   if (code === "S") return "Stage SDIS ";
   if (code.includes("SHR")) return "Présence SDIS ";
   return null;
@@ -185,7 +187,7 @@ function buildEvent(item) {
 
   let colorId = "1";
 
-  if (item.text === "G") colorId = "4";
+  if (item.text === "G" || item.text === "J" || item.text === "N") colorId = "4";
   if (item.text === "S") colorId = "9";
   if (item.text.includes("SHR")) colorId = "10";
 
@@ -362,81 +364,73 @@ async function main() {
     console.log(DRY_RUN ? "TEST AGATT sans ecriture ni mail" : "Synchronisation AGATT");
     console.log("Ouverture planning AGATT...");
 
-    const alreadyLoaded = existingPage && await page.evaluate(
-      () => document.querySelectorAll("div.c").length > 0
-    ).catch(() => false);
-    if (!alreadyLoaded) {
-      await page.goto(AGATT_URL, {
-        waitUntil: "networkidle2",
-        timeout: 60000,
-      });
-    }
-
     const window = activeDateWindow();
-    await page.waitForFunction(
-      () => document.querySelectorAll("div.c").length > 0,
-      { timeout: 15000 }
-    ).catch(() => {});
-
+    const currentUrl = await page.url();
+    if (!agattView.expectedView(currentUrl)) {
+      console.log("AGATT — mauvaise vue, navigation vers le planning garde/exercice");
+    } else {
+      console.log("AGATT — rechargement du planning pour une session AGATT valide");
+    }
+    await page.goto(AGATT_URL, { waitUntil: "networkidle2", timeout: 60000 });
     console.log("Page utilisée :", await page.url());
-
     await page.waitForSelector("body", { timeout: 10000 });
-
     const bodyText = await page.evaluate(() => document.body.innerText);
-
-    if (
-      bodyText.toLowerCase().includes("connexion") ||
-      bodyText.toLowerCase().includes("login") ||
-      bodyText.toLowerCase().includes("mot de passe")
-    ) {
-      await envoyerMail(
-        "⚠️ Session SDIS expirée",
-        "La session AGATT/SDIS semble expirée. Reconnecte-toi dans Chrome sur le vieux PC."
-      );
-
-      if (ownsPage) await page.close();
-      await browser.disconnect();
-      process.exit(1);
+    if (bodyText.toLowerCase().includes("connexion") || bodyText.toLowerCase().includes("login") || bodyText.toLowerCase().includes("mot de passe")) {
+      throw new Error("AGATT — session expirée, reconnexion nécessaire.");
     }
-
-    await scrollTousLesBlocs(page);
-
-    const cellCount = await page.evaluate(() => {
-      return document.querySelectorAll("div.c").length;
-    });
-
-    if (cellCount === 0) {
-      await envoyerMail(
-        "⚠️ Bot SDIS : planning introuvable",
-        "Le bot ne trouve aucune cellule de planning AGATT. Vérifie que Chrome est bien connecté au SDIS."
-      );
-
-      if (ownsPage) await page.close();
-      await browser.disconnect();
-      process.exit(1);
+    // La fenêtre (aujourd'hui + 6 mois) peut s'étendre sur deux années civiles
+    // (ex. 16/09/2026 → 16/03/2027). AGATT n'affiche qu'une année à la fois :
+    // on lit chaque année présente dans la fenêtre puis on fusionne les cellules.
+    const startYear = String(window.start || "").slice(0, 4);
+    const endYear = String(window.year || "").match(/^\d{4}$/) ? String(window.year) : startYear;
+    const years = [...new Set([startYear, endYear].filter(y => /^\d{4}$/.test(y)))];
+    let rawCells = [];
+    const multiObservedIds = new Set();
+    for (const year of years) {
+      console.log("Année AGATT lue :", year);
+      await page.evaluate((year) => {
+        const sc = document.querySelector('select[name="annee"]');
+        if (sc && sc.value !== String(year)) {
+          sc.value = String(year);
+          const btn = document.querySelector(".validFormulaire");
+          if (btn) btn.click();
+        }
+      }, year);
+      await page.waitForFunction((year, agent) => Array.from(document.querySelectorAll("div.c")).some(el =>
+        new RegExp("^" + agent + "_" + year + "\\d{4}$").test(String(el.id || ""))),
+        { timeout: 20000 }, year, AGENT_ID).catch(() => {});
+      await page.waitForFunction(
+        () => document.querySelectorAll("div.c").length > 0,
+        { timeout: 15000 }
+      ).catch(() => {});
+      await scrollTousLesBlocs(page);
+      const yearCells = await page.evaluate((agent, year) => Array.from(document.querySelectorAll("div.c"))
+        .filter(el => el.id && new RegExp("^" + agent + "_" + year + "\\d{4}$").test(String(el.id || "")))
+        .map(el => {
+          let code = "";
+          for (const selector of ["[data-occupation-code]", ".occupation-code", ".code-occupation", ".occupation", ".code"]) {
+            const node = el.querySelector(selector);
+            if (node && node.textContent.trim()) { code = node.textContent.trim(); break; }
+          }
+          const text = el.innerText.trim();
+          if (!code && /^(G|J|N|S|SHR(?:\s*\w+)?)$/i.test(text)) code = text;
+          return { id: el.id, code, text };
+        }), AGENT_ID, year);
+      rawCells = rawCells.concat(yearCells);
+      const yearIds = await page.evaluate((agent, year) => Array.from(document.querySelectorAll("div.c")).map(el => el.id).filter(id => new RegExp("^" + agent + "_" + year + "\\d{4}$").test(id)), AGENT_ID, year);
+      yearIds.forEach(id => multiObservedIds.add(id));
     }
-
-    const allItems = await page.evaluate((AGENT_ID) => {
-      return Array.from(document.querySelectorAll("div.c"))
-        .filter(el => el.id && el.id.startsWith(`${AGENT_ID}_`))
-        .map(el => ({
-          id: el.id,
-          text: el.innerText.trim(),
-        }))
-        .filter(el => {
-          const t = el.text;
-
-          return (
-            t === "G" ||
-            t === "S" ||
-            t.includes("SHR")
-          );
-        });
-    }, AGENT_ID);
-
-    const activeCells = allItems.filter(item =>
-      dateInActiveWindow(getRawDateFromAgattId(item.id), window)
-    );
+    const finalUrl = await page.url();
+    if (!agattView.expectedView(finalUrl)) {
+      console.log("AGATT — changement d'année, retour vers la vue garde/exercice...");
+      await page.goto(AGATT_URL, { waitUntil: "networkidle2", timeout: 60000 });
+      await page.waitForSelector("body", { timeout: 10000 });
+    }
+    const validation = agattView.validateView(await page.url(), rawCells, window, AGENT_ID);
+    if (!validation.ok) throw new Error(validation.message);
+    console.log(validation.message);
+    const allItems = validation.guards.map(item => ({ id: item.id, text: item.code }));
+    const activeCells = allItems.filter(item => dateInActiveWindow(getRawDateFromAgattId(item.id), window));
     const items = await page.evaluate(async (cells) => {
       const details = async item => {
         const parts = item.id.split("_");
@@ -465,24 +459,27 @@ async function main() {
         .filter(item => dateInActiveWindow(getRawDateFromAgattId(item.id), window))
         .map(item => [item.id, item])
     ).values()];
+    const planning = planningModel.buildPlanning(activeItems.map(item => ({
+      ...item,
+      date: getRawDateFromAgattId(item.id),
+      code: item.text,
+    })), runtime.config().reposCompensatoire === true);
+    planningModel.printPlanning(planning);
     console.log(`${items.length} événements AGATT trouvés (${activeItems.length} dans la fenêtre active)`);
 
-    if (allItems.length === 0) {
-      await envoyerMail(
-        "⚠️ Bot SDIS : aucun événement trouvé",
-        "AGATT est ouvert, mais aucune garde/stage/présence n’a été trouvée. Aucune suppression effectuée."
-      );
+    if (allItems.length === 0) console.log("AGATT — planning valide mais aucune garde sur la période");
 
-      if (ownsPage) await page.close();
-      await browser.disconnect();
-      process.exit(1);
-    }
-
-    const observedIds = new Set(await page.evaluate(agent => Array.from(document.querySelectorAll("div.c")).map(el => el.id).filter(id => new RegExp("^" + agent + "_\\d{8}$").test(id)), AGENT_ID));
+    const observedIds = multiObservedIds;
     if (!observedIds.size || items.some(item => !observedIds.has(item.id))) throw new Error("Perimetre AGATT invalide.");
     writeExecutionSnapshot({
-      guards: activeItems
-        .filter(item => item.text === "G")
+      planning: {
+        entries: planning.entries,
+        guards: planning.guards,
+        dendreo: planning.dendreo,
+        compensatoryRestDates: planning.compensatoryRestDates,
+        reposCompensatoire: planning.reposCompensatoire,
+      },
+      guards: planning.guards
         .map(item => ({
           id: item.id,
           date: require('./dendreo-state').normalizeDate(getRawDateFromAgattId(item.id)),
@@ -502,8 +499,7 @@ async function main() {
       .filter(Boolean)
       .sort();
 
-    const newGuardDates = activeItems
-      .filter(item => item.text === "G")
+    const newGuardDates = planning.guards
       .map(item => getRawDateFromAgattId(item.id))
       .filter(Boolean)
       .sort();
@@ -533,10 +529,10 @@ async function main() {
       }
     }
 
-    const currentAgattIds = new Set(activeItems.map(g => g.id));
+    const currentAgattIds = new Set(planning.google.map(g => g.id));
 
     // Plan complet journalisé avant toute écriture Google.
-    for (const item of activeItems) {
+    for (const item of planning.google) {
       const existing = existingByAgattId.get(item.id);
       console.log(`PLAN ${existing && eventNeedsUpdate(existing, buildEvent(item), item) ? "UPDATE" : (existing ? "NOTHING" : "CREATE")} Google : ${item.id}`);
     }
@@ -555,7 +551,7 @@ async function main() {
       console.log("Doublon supprimé :", agattId);
     }
 
-    for (const item of activeItems) {
+    for (const item of planning.google) {
       const eventBody = buildEvent(item);
       const existing = existingByAgattId.get(item.id);
 

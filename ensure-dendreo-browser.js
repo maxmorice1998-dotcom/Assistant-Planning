@@ -73,7 +73,7 @@ async function main() {
     let pages = await browser.pages();
 
     let agenda = pages.find(p =>
-      isDendreo(p.url()) && p.url().includes("/agenda")
+      isDendreo(p.url()) && /\/formateurs\/[^/]+\/agenda\/?(?:[?#]|$)/i.test(new URL(p.url()).pathname)
     );
 
     if (agenda) {
@@ -104,7 +104,7 @@ async function main() {
 
     // A login/session redirect can take a moment.
     for (let i = 0; i < 5; i++) {
-      if (page.url().includes("/agenda")) {
+      if (/\/formateurs\/[^/]+\/agenda\/?(?:[?#]|$)/i.test(new URL(page.url()).pathname)) {
         console.log("Agenda Dendreo ouvert : OK");
         return;
       }
@@ -118,7 +118,7 @@ async function main() {
         });
         await sleep(1000);
 
-        if (page.url().includes("/agenda")) {
+        if (/\/formateurs\/[^/]+\/agenda\/?(?:[?#]|$)/i.test(new URL(page.url()).pathname)) {
           console.log("Agenda Dendreo ouvert automatiquement : OK");
           return;
         }
@@ -128,7 +128,7 @@ async function main() {
     }
 
     // Final attempt from the home page, useful if the existing tab was stale.
-    if (!page.url().includes("/agenda")) {
+    if (!/\/formateurs\/[^/]+\/agenda\/?(?:[?#]|$)/i.test(new URL(page.url()).pathname)) {
       await page.goto(BASE_URL, {
         waitUntil: "domcontentloaded",
         timeout: 30000
@@ -146,7 +146,7 @@ async function main() {
       }
     }
 
-    if (!page.url().includes("/agenda")) {
+    if (!/\/formateurs\/[^/]+\/agenda\/?(?:[?#]|$)/i.test(new URL(page.url()).pathname)) {
       throw new Error(
         "Session Dendreo non reconnue ou lien Agenda introuvable. Chrome a ete ouvert pour permettre une reconnexion."
       );
