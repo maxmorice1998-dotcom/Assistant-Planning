@@ -40,7 +40,8 @@ internal static class Program {
     return 0;
    }
    Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
-   using(MainForm form=new MainForm()){
+   bool skipUpdate=Array.IndexOf(args,"--skip-update")>=0 || Array.IndexOf(args,"--preview")>=0 || Array.IndexOf(args,"--preview-calendar")>=0;
+   using(MainForm form=new MainForm(skipUpdate)){
     if(args.Length==2&&args[0]=="--calendar")form.PreviewCalendar(args[1]);
     if((args.Length==2 && args[0]=="--preview")||(args.Length==3 && args[0]=="--preview-calendar")){
      if(args[0]=="--preview-calendar")form.PreviewCalendar(args[2]);
@@ -86,7 +87,7 @@ internal sealed class MainForm:Form {
  bool busy;
  Process activeRequest;
  bool syncProgressMode;
- public MainForm(){
+ public MainForm(bool skipUpdate=false){
  Text="Assistant Planning";ClientSize=new Size(640,800);MinimumSize=new Size(656,839);AutoScroll=false;
   try{string iconPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","assistant-planning.ico");if(File.Exists(iconPath))Icon=new Icon(iconPath);}catch{}
   StartPosition=FormStartPosition.CenterScreen;Font=new Font("Segoe UI",11);BackColor=Color.FromArgb(250,250,249);
@@ -123,6 +124,7 @@ internal sealed class MainForm:Form {
    busyTimer.Interval=120;busyTimer.Tick+=(s,e)=>{string[] frames={"|","/","-","\\"};int n=busyTimer.Tag==null?0:(int)busyTimer.Tag;n=(n+1)%frames.Length;busyTimer.Tag=n;busySpinner.Text=frames[n];};
    progressTimer.Interval=150;progressTimer.Tick+=(s,e)=>PollProgress();
   // Les mises à jour passent par le même backend que les autres actions.
+  Shown+=(s,e)=>{if(skipUpdate)RefreshStatusInBackground();else Call("startup");};
   FormClosing+=(s,e)=>{busy=false;busyTimer.Stop();progressTimer.Stop();try{if(activeRequest!=null&&!activeRequest.HasExited)activeRequest.Kill();}catch{}};
  }
  string BuildLabel(){
@@ -182,7 +184,7 @@ internal sealed class MainForm:Form {
  }
 
  async void Call(string action){
-  if(busy)return;if(action=="startup"){SetBusy(false,"",false);}else SetBusy(true,BusyMessage(action),action=="synchronize");
+  if(busy)return;SetBusy(true,BusyMessage(action),action=="synchronize");
   status.ForeColor=Color.FromArgb(3,46,66);
   status.Text=action=="startup"?"Recherche de mise a jour...":(action=="google"?"Ouverture de Google... Terminez la connexion dans votre navigateur.":(action=="synchronize"?"Synchronisation en cours...":"Verification en cours..."));
   try{

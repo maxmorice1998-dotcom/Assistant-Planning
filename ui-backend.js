@@ -56,7 +56,7 @@ async function handle(req){
   try{
    const updater=require("./update-client");
    const info=await updater.check();
-   if(!info.available)return {ok:true,updated:false,warning:false,message:""};
+   if(!info.available)return {ok:true,updated:false,warning:!!info.temporary,message:""};
    const result=await updater.install(info);
    return {ok:true,updated:!!result.started,warning:false,message:"Mise à jour d'Assistant Planning…"};
   }catch(error){
