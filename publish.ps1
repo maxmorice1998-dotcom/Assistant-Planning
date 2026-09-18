@@ -42,7 +42,12 @@ foreach($file in @($app,$installer,$manifestPath)){
  $old=$release.assets | Where-Object name -eq $name
  if($old){Invoke-RestMethod "$api/releases/assets/$($old.id)" -Method Delete -Headers $headers | Out-Null}
  $upload="https://uploads.github.com/repos/$repository/releases/$($release.id)/assets?name=$([Uri]::EscapeDataString($name))"
- $asset=Invoke-RestMethod $upload -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $file -TimeoutSec 1800
+ $responseFile=Join-Path $root '.upload-response.json'
+ try {
+  ('header = "Authorization: Bearer '+$token+'"') | & curl.exe --config - --fail --silent --show-error --max-time 1800 --output $responseFile -X POST -H 'Accept: application/vnd.github+json' -H 'Content-Type: application/octet-stream' --data-binary "@$file" $upload
+  if($LASTEXITCODE -ne 0){throw "Téléversement impossible : $name"}
+  $asset=Get-Content $responseFile -Raw | ConvertFrom-Json
+ } finally {if(Test-Path -LiteralPath $responseFile){Remove-Item -LiteralPath $responseFile -Force}}
  if([long]$asset.size -ne (Get-Item $file).Length){throw "Taille distante incorrecte : $name"}
  if($asset.digest -and $asset.digest -ne ('sha256:'+(Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant())){throw "Empreinte distante incorrecte : $name"}
  Write-Output "Téléversé et vérifié : $name"
