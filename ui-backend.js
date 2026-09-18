@@ -6,11 +6,15 @@ process.on("unhandledRejection",error=>{try{diagnostic.reportError({module:"node
 async function waitForBrowserConnection(kind, timeoutMs=240000,windowBounds=null){
  const manager=require("./browser-manager");
  const started=await manager.open(kind,{windowBounds});
+ const finishCapture=kind==="agatt"?await manager.captureManualAgatt():null;
+ let captureFinished=false;
+ try{
  const deadline=Date.now()+timeoutMs;
  let last;
  while(Date.now()<deadline){
   last=await manager.status(kind);
   if(last.connected===true){
+   if(finishCapture){await finishCapture(true);captureFinished=true;}
    // La session est validée : fermeture immédiate de la fenêtre dédiée.
    Promise.resolve().then(()=>manager.closeDedicated(kind)).catch(()=>{});
    return {ok:true,message:kind==="agatt"?"AGATT connecte":"Dendreo connecte",status:last};
@@ -18,6 +22,7 @@ async function waitForBrowserConnection(kind, timeoutMs=240000,windowBounds=null
   await new Promise(resolve=>setTimeout(resolve,250));
  }
  return {ok:false,message:kind.toUpperCase()+" : délai dépassé. Terminez la connexion dans le navigateur puis réessayez.",status:last||{connected:false,reconnect:true}};
+ }finally{if(finishCapture&&!captureFinished)await finishCapture(false);}
 }
 function safeDiagnostic(value){return String(value||"Erreur inconnue.").replace(/(?:access[_ -]?token|refresh[_ -]?token|client[_ -]?secret|password|cookie|bearer|authorization code|code_verifier|eyJ[a-z0-9_-]{10,})[^\s]*/ig,"[donnée masquée]").slice(0,500);}
 function formatDiagnostic(results){

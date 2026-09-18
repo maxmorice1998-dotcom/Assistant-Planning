@@ -62,11 +62,12 @@ function rawMail(mail,email){
  const headers=["From: "+email,"To: "+email,"Subject: =?UTF-8?B?"+subject+"?=","MIME-Version: 1.0","Content-Type: text/plain; charset=UTF-8"];
  return Buffer.from(headers.join("\r\n")+"\r\n\r\n"+mail.body,"utf8").toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 }
-async function send(mail){
+async function send(mail,beforeSend=()=>{}){
  const {auth}=await oauth.authorizedClient();
  const profile=await google.oauth2({version:"v2",auth}).userinfo.get();
  const email=String(profile.data&&profile.data.email||runtime.config().googleEmail||"").trim();
  if(!/^\S+@\S+\.\S+$/.test(email))return false;
+ beforeSend();
  await google.gmail({version:"v1",auth}).users.messages.send({userId:"me",requestBody:{raw:rawMail(mail,email)}});
  return true;
 }
@@ -74,7 +75,10 @@ async function main(){
  const payload=readPayload();
  if(!payload){writeStatus("skipped","Mail ignoré : aucun résultat.");cleanup();return;}
  if(process.argv.includes("--dry-run")){writeStatus("skipped","Mail ignoré en mode test.");cleanup();return;}
- try{const sent=await send(compose(payload));writeStatus(sent?"sent":"skipped",sent?"Mail envoyé via Google.":"Mail ignoré : autorisation Google absente.");}
+ try{
+  const result=payload.ok===false?await require("./sync-error-mail").once(payload,beforeSend=>send(compose(payload),beforeSend)):{sent:await send(compose(payload))};
+  writeStatus(result.sent?"sent":"skipped",result.sent?"Mail envoyé via Google.":result.duplicate?"Alerte identique déjà traitée : mail ignoré.":"Mail ignoré : autorisation Google absente.");
+ }
  catch(error){writeStatus("error","Mail ignoré : "+String(error&&error.message||"erreur d'envoi").slice(0,300));}
  finally{cleanup();}
 }

@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference='Stop'
+$ErrorActionPreference='Stop'
 $root=$PSScriptRoot
 $repository='maxmorice1998-dotcom/Assistant-Planning'
 $version=(Get-Content "$root\app-version.json" -Raw | ConvertFrom-Json).version
@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="La synchronisation automatique démarre 12 secondes après le déverrouillage, l’ouverture de session ou la sortie de veille. Le moteur gère seul le verrou de synchronisation pour éviter l’erreur « Une synchronisation est déjà en cours » causée par l’ancien lanceur automatique."
+$notes="Reconnexion AGATT automatique avec sauvegarde chiffrée de la session et des identifiants après une connexion manuelle réussie. Suppression des alertes email identiques pendant 30 minutes et des erreurs lors de déclenchements simultanés. Amélioration des fenêtres de connexion."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

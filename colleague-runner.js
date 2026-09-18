@@ -92,6 +92,7 @@ async function preflightReal(){
  let agattStatus=await manager.status("agatt");
  if(!agattStatus.connected||agattStatus.available===false){try{if(automaticRun&&agattStatus.available===false)automaticBrowsers.add("agatt");await manager.open("agatt",{background:true});}catch(error){throw new Error("AGATT : reconnexion nécessaire.");}}
  agattStatus=await manager.status("agatt");
+ if(!agattStatus.connected){await manager.reconnectAgatt();agattStatus=await manager.status("agatt");}
  if(!agattStatus.connected)throw new Error("Connexion AGATT : planning non connecté.");
  try{await manager.inspect("agatt");}catch(error){throw new Error("AGATT : reconnexion nécessaire.");}
  let dendreoStatus=await manager.status("dendreo");
@@ -175,9 +176,10 @@ async function run(options={}){
    const report={dryRun,time:new Date().toISOString(),version:appVersion,build:appBuild,executable:appExecutable,results,mailStatus,slowest:results.filter(r=>Number.isFinite(r.durationMs)).sort((a,b)=>b.durationMs-a.durationMs)[0]?.name||"",ok:agatt&&dendreo&&results.every(r=>r.ok),durationMs:results.reduce((n,r)=>n+(Number(r.durationMs)||0),0),summary:summarize(results)};
    emitProgress("complete",100,"Synchronisation terminée",`${(report.durationMs/1000).toFixed(1)} s`,{steps:results.length});
    rt.writeJson("simulation-status.json",report);writeDiagnostic();
+   if(!dryRun&&report.ok)require("./sync-error-mail").reset();
    return {...report,calendar};
  }catch(error){
-  reportUnhandled(error,"synchronisation");
+  // Cet échec est déjà pris en charge par send-combined-alerts : aucun diagnostic mail supplémentaire.
   results.push({name:"Préparation",ok:false,message:safeMessage(error.message),code:error.code||null});
   const failed=results.find(r=>r.ok===false)||results[results.length-1]||{};
   let lastProgress=null;try{lastProgress=progressPath?rt.readJson("sync-progress.json",null):null;}catch{}

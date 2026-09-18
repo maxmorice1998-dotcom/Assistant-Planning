@@ -6,7 +6,7 @@ if([string]$info.version -ne $Version){throw 'Version applicative incoherente.'}
 $stage=Join-Path $root ('.app-stage-'+$Version+'-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $stage|Out-Null
  $files=@('SDIS-Collegues.exe','SDIS-Collegues-Bridge.exe','operation-lock.js','runtime-config.js','ui-backend.js','browser-manager.js','browser-client.js','colleague-runner.js','check-agatt-alerts.js','check-dendreo-alerts.js','cleanup-dendreo-stale.js','dendreo-state.js','ensure-dendreo-browser.js','send-combined-alerts.js','sync.js','sync-dendreo.js','sdis-utils.js','google-oauth-v2.js','update-client.js','update-helper.ps1','verify-browser.ps1','app-version.json','package.json','package-lock.json','google-oauth-config.json')
-foreach($file in @('agatt-view.js','planning-model.js','diagnostic-report.js','diagnostic-worker.js','diagnostic-config.json','background-sync.js','configure-background-task.ps1')){$files += $file}
+foreach($file in @('agatt-view.js','agatt-session.js','sync-error-mail.js','planning-model.js','diagnostic-report.js','diagnostic-worker.js','diagnostic-config.json','background-sync.js','configure-background-task.ps1')){$files += $file}
 foreach($file in $files){$sourceRoot=if($file -like '*.exe'){$BinaryRoot}else{$root};$src=Join-Path $sourceRoot $file;if(-not(Test-Path -LiteralPath $src -PathType Leaf)){throw "Fichier obligatoire absent : $file"};Copy-Item $src (Join-Path $stage $file)}
 foreach($dir in @('node_modules','assets','runtime')){Copy-Item (Join-Path $root $dir) (Join-Path $stage $dir) -Recurse}
  # Configuration publique du canal de distribution, sans données utilisateur.

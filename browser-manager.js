@@ -31,7 +31,7 @@ async function occupied(port){
 }
 async function waitForPort(port,timeoutMs=15000){
  const deadline=Date.now()+timeoutMs;
- while(Date.now()<deadline){if(await occupied(port))return true;await new Promise(r=>setTimeout(r,200));}
+ while(Date.now()<deadline){if(await occupied(port))return true;await new Promise(r=>setTimeout(r,80));}
  return false;
 }
 function psQuote(value){return "'"+String(value).replace(/'/g,"''")+"'";}
@@ -93,6 +93,9 @@ exit 1`;
   return result.status===0?0:(result.status===2?2:1);
  }catch{return 1;}
 }
+function focusDedicatedWindowSoon(kind,bounds){
+ Promise.resolve().then(()=>focusDedicatedWindow(kind,bounds)).catch(()=>{});
+}
  async function open(kind,options={}){
   const background=options&&options.background===true;
  if(!urls[kind])throw new Error("Connexion inconnue.");rt.initialize();
@@ -107,10 +110,10 @@ exit 1`;
    await waitForPort(rt.ports[kind],8000);
    if(await occupied(rt.ports[kind]))return "";
    reopening=true;
-  }else{if(!background&&existingWindow!==0)focusDedicatedWindow(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
+  }else{if(!background&&existingWindow!==0)focusDedicatedWindowSoon(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
  }
  if(!reopening&&(existingWindow===0||existingWindow===2)){
-  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindow(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
+  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindowSoon(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
   throw new Error("Le navigateur ne répond pas.");
  }
  fs.mkdirSync(rt.profile(kind),{recursive:true});
@@ -121,7 +124,7 @@ exit 1`;
   const child=spawn(rt.browserExe(),browserArgs,{detached:true,stdio:"ignore",windowsHide:background});
  await new Promise((resolve,reject)=>{child.once("spawn",resolve);child.once("error",()=>reject(new Error("Impossible d'ouvrir le navigateur.")));});
  child.unref();
-  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindow(kind,options&&options.windowBounds);return background?"Session persistante ouverte en arriere-plan.":"Connectez-vous dans la fenêtre ouverte, puis cliquez sur Vérifier les connexions.";}
+  if(await waitForPort(rt.ports[kind],15000)){rt.verifyBrowser(kind);if(!background)focusDedicatedWindowSoon(kind,options&&options.windowBounds);return background?"Session persistante ouverte en arriere-plan.":"Connectez-vous dans la fenêtre ouverte, puis cliquez sur Vérifier les connexions.";}
  throw new Error("Le navigateur ne répond pas.");
 }
 async function inspect(kind){
@@ -148,10 +151,30 @@ async function closeDedicated(kind){
  try{
   rt.verifyBrowser(kind);
   browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports[kind]});
-  await browser.close();
+  // Demande de fermeture immédiate, sans laisser Puppeteer bloquer l'interface.
+  await Promise.race([browser.close().catch(()=>{}),new Promise(resolve=>setTimeout(resolve,900))]);
+  if(await occupied(rt.ports[kind]))forceCloseDedicated(kind);
   return true;
  }catch{return false;}
  finally{if(browser)try{await browser.disconnect();}catch{}}
+}
+function forceCloseDedicated(kind){
+ const powershell=process.env.SystemRoot
+  ? require("path").join(process.env.SystemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe")
+  : "powershell.exe";
+ const portNeedle=psQuote("--remote-debugging-port="+rt.ports[kind]);
+ const profileNeedle=psQuote("--user-data-dir="+rt.profile(kind));
+ const script=`$ErrorActionPreference='SilentlyContinue'
+$portNeedle=${portNeedle}
+$profileNeedle=${profileNeedle}
+foreach($process in Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"){
+  $line=[string]$process.CommandLine
+  if($line.IndexOf($portNeedle,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+     $line.IndexOf($profileNeedle,[StringComparison]::OrdinalIgnoreCase) -ge 0){
+    Stop-Process -Id ([int]$process.ProcessId) -Force
+  }
+}`;
+ try{spawnSync(powershell,["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-Command",script],{windowsHide:true,timeout:3000,stdio:["ignore","ignore","ignore"]});}catch{}
 }
  async function status(kind){
   try{rt.verifyBrowser(kind);}catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:false,available:false,reason:"browser_unavailable"});}
@@ -160,6 +183,7 @@ async function closeDedicated(kind){
   browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports[kind]});
   const pages=await browser.pages();
   if(kind==="agatt"){
+   await require("./agatt-session").observe(pages);
    const authPage=pages.find(p=>{try{const u=new URL(p.url());return u.hostname==="auth.sdis14.fr";}catch{return false;}});
     if(authPage)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"auth_page"});
    const page=pages.find(p=>{try{return new URL(p.url()).hostname==="agatt.sdis14.fr";}catch{return false;}});
@@ -167,6 +191,7 @@ async function closeDedicated(kind){
    const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],button[type="submit"]'),cells:document.querySelectorAll("div.c").length}));
     if(details.login||details.url.includes("auth.sdis14.fr"))return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"login_form"});
     if(details.cells<=0)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"planning_unavailable"});
+    await require("./agatt-session").save(browser);
     return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"planning_loaded"});
   }
   if(kind==="dendreo"){
@@ -197,4 +222,19 @@ async function closeDedicated(kind){
   }catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:true,available:true,reason:"temporary_error"});}
  finally{if(browser)try{await browser.disconnect();}catch{}}
 }
-module.exports={open,inspect,status,closeDedicated,normalizeWindowBounds,windowArguments};
+async function reconnectAgatt(){
+ rt.verifyBrowser("agatt");
+ const browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports.agatt});
+ try{return await require("./agatt-session").reconnect(browser);}
+ catch{throw new Error("AGATT : reconnexion automatique impossible ou validation supplémentaire requise.");}
+ finally{await browser.disconnect();}
+}
+async function captureManualAgatt(){
+ rt.verifyBrowser("agatt");
+ const browser=await require("puppeteer").connect({browserURL:"http://127.0.0.1:"+rt.ports.agatt});
+ try{
+  const finish=await require("./agatt-session").watchManual(browser);
+  return async success=>{try{await finish(success);}finally{await browser.disconnect();}};
+ }catch(error){await browser.disconnect();throw error;}
+}
+module.exports={open,inspect,status,closeDedicated,reconnectAgatt,captureManualAgatt,normalizeWindowBounds,windowArguments};

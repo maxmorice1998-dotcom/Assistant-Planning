@@ -6,7 +6,7 @@ async function execute(failure){
  const modules={
   "./runtime-config":{dataDir:"data",dataPath:name=>name},
   fs:{mkdirSync(){},appendFileSync(file,line){logs.push(line);}},
-  "./colleague-runner":{async run(options){calls.push(options);if(failure)throw new Error("Internet indisponible");return {ok:true};}},
+  "./colleague-runner":{async run(options){calls.push(options);if(failure){const error=new Error("Internet indisponible");if(failure==="locked")error.code="LOCK_ACTIVE";throw error;}return {ok:true};}},
   "./diagnostic-report":{safeMessage:error=>error.message}
  };
  vm.runInNewContext(source,{require:name=>{assert.ok(name in modules);return modules[name];},process});
@@ -18,6 +18,10 @@ test("automatic sync uses the real engine in background and logs success",async(
  assert.equal(result.calls.length,1);assert.equal(result.calls[0].dryRun,false);assert.equal(result.calls[0].background,true);
  assert.equal(result.logs.length,2);assert.match(result.logs[0],/Démarrage/);assert.match(result.logs[1],/SUCCÈS/);
  assert.equal(result.process.exitCode,undefined);
+});
+test("a simultaneous automatic trigger exits successfully without an error or mail",async()=>{
+ const result=await execute("locked");assert.equal(result.calls.length,1);
+ assert.equal(result.logs.length,1);assert.equal(result.process.exitCode,undefined);
 });
 test("automatic sync logs failure without issuing a second email",async()=>{
  const result=await execute(true);

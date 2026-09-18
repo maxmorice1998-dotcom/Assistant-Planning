@@ -51,7 +51,7 @@ function initialize(){
 function config(){initialize();return readJson("colleague-config.json",{});}
 function profile(kind){if(!ports[kind])throw new Error("Navigateur inconnu.");return path.join(dataDir,"profiles",kind);}
 function secretPath(name){
- if(!["smtp","google-token","google-client-secret"].includes(name))throw new Error("Secret inconnu.");
+ if(!["smtp","google-token","google-client-secret","agatt-session","agatt-login"].includes(name))throw new Error("Secret inconnu.");
  return path.join(dataDir,"secrets",name+".dpapi");
 }
 function bridge(mode,input){
@@ -145,12 +145,20 @@ function browserExe(){
  throw new Error("Navigateur absent du package. Demandez une version complète au distributeur.");
 }
 function verifyBrowser(kind) {
- if(!ports[kind])throw new Error("Port non autorisé.");
+ if(!ports[kind])throw new Error("Connexion indisponible.");
  const powershell=path.join(process.env.SystemRoot,"System32","WindowsPowerShell","v1.0","powershell.exe");
  const result=spawnSync(powershell,["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",
   path.join(root,"verify-browser.ps1"),"-Port",String(ports[kind]),"-Profile",profile(kind)],
   {encoding:"utf8",windowsHide:true,timeout:15000});
- if(result.error||result.status!==0)throw new Error("Navigateur non connecté ou port occupé par une autre application. Ouvrez la connexion depuis l'assistant.");
+ if(result.error||result.status!==0){
+  // Le détail technique reste disponible dans le journal de diagnostic.
+  // L'interface ne doit pas exposer les ports internes ni les autres applications.
+  const label=kind==="agatt"?"AGATT":(kind==="dendreo"?"Dendreo":"service");
+  const error=new Error(`La connexion ${label} n'est pas disponible. Ouvrez-la depuis l'assistant puis réessayez.`);
+  error.code="BROWSER_UNAVAILABLE";
+  error.browserCheck=result.error?"process_error":`exit_${result.status}`;
+  throw error;
+ }
 }
 let prepared=false;
 function prepare(){

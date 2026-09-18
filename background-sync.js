@@ -9,6 +9,7 @@ async function main(){
   log(result.ok?"SUCCÈS : synchronisation terminée.":"ERREUR : synchronisation interrompue.");
   if(!result.ok)process.exitCode=1;
  }catch(error){
+  if(error&&error.code==="LOCK_ACTIVE")return; // Un autre déclencheur possède déjà le verrou du moteur.
   log("ERREUR : "+require("./diagnostic-report").safeMessage(error));
   // Le moteur possède déjà la gestion des mails d'erreur : aucun second envoi ici.
   process.exitCode=1;
