@@ -33,6 +33,11 @@ async function waitForPort(port,timeoutMs=15000){
  while(Date.now()<deadline){if(await occupied(port))return true;await new Promise(r=>setTimeout(r,80));}
  return false;
 }
+async function waitForClosedPort(port,timeoutMs=8000){
+ const deadline=Date.now()+timeoutMs;
+ while(Date.now()<deadline){if(!await occupied(port))return true;await new Promise(resolve=>setTimeout(resolve,80));}
+ return false;
+}
 function psQuote(value){return "'"+String(value).replace(/'/g,"''")+"'";}
 function normalizeWindowBounds(value){
  const b=value&&typeof value==='object'?value:{};
@@ -106,8 +111,7 @@ function focusDedicatedWindowSoon(kind,bounds){
   if(!background)existingWindow=focusDedicatedWindow(kind,options&&options.windowBounds);
   if(!background&&existingWindow===2){
    if(!await closeDedicated(kind))throw new Error("Impossible de fermer la session invisible pour vous reconnecter.");
-   await waitForPort(rt.ports[kind],8000);
-   if(await occupied(rt.ports[kind]))return "";
+   if(!await waitForClosedPort(rt.ports[kind],8000))throw new Error("La session précédente se ferme encore. Réessayez dans quelques secondes.");
    reopening=true;
   }else{if(!background&&existingWindow!==0)focusDedicatedWindowSoon(kind,options&&options.windowBounds);return "La fenêtre de connexion est déjà ouverte.";}
  }
@@ -116,7 +120,10 @@ function focusDedicatedWindowSoon(kind,bounds){
   throw new Error("Le navigateur ne répond pas.");
  }
  fs.mkdirSync(rt.profile(kind),{recursive:true});
-  const target=kind==='dendreo'&&!background?'https://formation.pompiers-14.org/login/formateur':urls[kind];
+  let target=kind==='dendreo'&&!background?'https://formation.pompiers-14.org/login/formateur':urls[kind];
+  if(kind==='dendreo'&&background&&typeof rt.config==='function'){
+   try{const saved=new URL(rt.config().dendreoUrl||'');if(saved.protocol==='https:'&&saved.hostname==='formation.pompiers-14.org'&&/\/agenda\/?$/.test(saved.pathname))target=saved.href;}catch{}
+  }
   const browserArgs=(background?["--headless=new","--disable-gpu"]:[]).concat(background?[]:windowArguments(options&&options.windowBounds)).concat(["--app="+target,"--remote-debugging-address=127.0.0.1",
    "--remote-debugging-port="+rt.ports[kind],"--user-data-dir="+rt.profile(kind),
    "--no-first-run","--no-default-browser-check","--disable-background-mode","--enable-automation"]);
@@ -183,39 +190,43 @@ foreach($process in Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"){
   const pages=await browser.pages();
   if(kind==="agatt"){
    await require("./agatt-session").observe(pages);
-   const authPage=pages.find(p=>{try{const u=new URL(p.url());return u.hostname==="auth.sdis14.fr";}catch{return false;}});
-    if(authPage)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"auth_page"});
-   const page=pages.find(p=>{try{return new URL(p.url()).hostname==="agatt.sdis14.fr";}catch{return false;}});
-    if(!page)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"agatt_page_missing"});
-   const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],button[type="submit"]'),cells:document.querySelectorAll("div.c").length}));
-    if(details.login||details.url.includes("auth.sdis14.fr"))return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"login_form"});
-    if(details.cells<=0)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"planning_unavailable"});
-    await require("./agatt-session").save(browser);
-    return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"planning_loaded"});
+   const candidates=pages.filter(p=>{try{const u=new URL(p.url());return u.protocol==="https:"&&u.hostname==="agatt.sdis14.fr";}catch{return false;}});
+   for(const page of candidates){
+    const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i]'),cells:document.querySelectorAll("div.c").length}));
+    if(!details.login&&new URL(details.url).hostname==="agatt.sdis14.fr"&&details.cells>0){
+     await require("./agatt-session").save(browser);
+     return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"planning_loaded"});
+    }
+   }
+   const authPage=pages.some(p=>{try{return new URL(p.url()).hostname==="auth.sdis14.fr";}catch{return false;}});
+   return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:authPage?"auth_page":candidates.length?"planning_unavailable":"agatt_page_missing"});
   }
   if(kind==="dendreo"){
-   const page=pages.find(p=>{try{return new URL(p.url()).hostname==="formation.pompiers-14.org";}catch{return false;}});
+   const candidates=pages.filter(p=>{try{const u=new URL(p.url());return u.protocol==="https:"&&u.hostname==="formation.pompiers-14.org";}catch{return false;}});
+   const page=candidates.find(p=>/\/agenda\/?$/.test(new URL(p.url()).pathname))||candidates.find(p=>!/^\/login(?:\/|$)/i.test(new URL(p.url()).pathname))||candidates[0];
     if(!page)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"dendreo_page_missing"});
-   const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],form[action*="connexion" i]'),agenda:/\/agenda(?:[/?#]|$)/i.test(location.pathname),agendaLink:!!document.querySelector('a[href*="/agenda"]'),loginText:/\b(se\s+connecter|identifiant|mot\s+de\s+passe|connexion\s+à\s+votre\s+compte)\b/i.test(document.body&&document.body.innerText||"")}));
+   const details=await page.evaluate(()=>({url:location.href,login:!!document.querySelector('input[type="password"],form[action*="login" i],form[action*="connexion" i]'),agenda:/\/agenda(?:[/?#]|$)/i.test(location.pathname),agendaLink:document.querySelector('a[href*="/agenda"]')?.href||"",loginText:/\b(se\s+connecter|identifiant|mot\s+de\s+passe|connexion\s+à\s+votre\s+compte)\b/i.test(document.body&&document.body.innerText||"")}));
     if(/\/login(?:\/|$)/i.test(new URL(details.url).pathname)||details.login||details.loginText)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"login_page"});
     if((details.agenda||details.agendaLink)&&!/^\/login(?:\/|$)/i.test(new URL(details.url).pathname)){
-     const api=await page.evaluate(async()=>{
+     const api=await page.evaluate(async(agendaLink)=>{
       try{
        let url;
        if(window.config_agenda&&window.config_agenda.events_url)url=new URL(window.config_agenda.events_url,location.href);
-       else url=new URL(location.origin+location.pathname.replace(/\/agenda\/?$/,'')+'/events');
+       else{const agenda=new URL(agendaLink||location.href,location.href);url=new URL(agenda.origin+agenda.pathname.replace(/\/agenda\/?$/,'')+'/events');}
        if(url.origin!==location.origin)return false;
        const now=new Date(),end=new Date(now);end.setDate(end.getDate()+1);
        const iso=d=>d.toISOString().slice(0,10)+'T00:00:00';
        url.search=new URLSearchParams({start:iso(now),end:iso(end),mode:'filter_agenda',agendaType:'agenda_principal',agendaMode:'principal',typeAgendaEvents:'me_or_groups'});
        const response=await fetch(url,{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(10000)});
+       if(response.status>=500)return {temporary:true};
        const text=await response.text();
        if(!response.ok||!/json/i.test(String(response.headers.get('content-type')||''))||/^\s*</.test(text))return false;
        if(response.url&&/\/login(?:\/|$)/i.test(new URL(response.url).pathname))return false;
        return Array.isArray(JSON.parse(text));
-      }catch{return false;}
-     });
-     if(!api)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"api_login_page"});
+      }catch(error){return error instanceof SyntaxError?false:{temporary:true};}
+     },details.agendaLink);
+     if(api&&api.temporary)return reportStatus(kind,{connected:false,reconnect:false,temporary:true,available:true,reason:"api_unavailable"});
+     if(api!==true)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"api_login_page"});
      return reportStatus(kind,{connected:true,reconnect:false,temporary:false,available:true,reason:"extranet_authenticated"});
     }
     return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"agenda_missing"});
@@ -223,6 +234,23 @@ foreach($process in Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"){
    return reportStatus(kind,{connected:false,reconnect:false,temporary:false,available:true,reason:"unsupported"});
   }catch(error){return reportStatus(kind,{connected:false,reconnect:false,temporary:true,available:true,reason:"temporary_error"});}
  finally{if(browser)try{await browser.disconnect();}catch{}}
+}
+async function verifySession(kind){
+ let current=await status(kind);
+ if(current.available!==false||!current.lastConfirmed)return current;
+ try{
+  const locks=require("./operation-lock");
+  for(const name of ["sync.lock","update.lock"])locks.ensureAvailable(rt.dataPath(name),name==="sync.lock"?"sync":"update");
+  await open(kind,{background:true});
+  const deadline=Date.now()+15000;let restored=false;
+  do{
+   current=await status(kind);
+   if(current.connected)return current;
+   if(kind==="agatt"&&current.reconnect&&!restored){restored=true;await reconnectAgatt();}
+   await new Promise(resolve=>setTimeout(resolve,250));
+  }while(Date.now()<deadline);
+  return current;
+ }catch{return {...current,connected:false,reconnect:false,temporary:true,reason:"session_verification_unavailable"};}
 }
 async function reconnectAgatt(){
  rt.verifyBrowser("agatt");
@@ -239,4 +267,4 @@ async function captureManualAgatt(){
   return async success=>{try{await finish(success);}finally{await browser.disconnect();}};
  }catch(error){await browser.disconnect();throw error;}
 }
-module.exports={open,inspect,status,closeDedicated,reconnectAgatt,captureManualAgatt,normalizeWindowBounds,windowArguments};
+module.exports={open,inspect,status,verifySession,closeDedicated,reconnectAgatt,captureManualAgatt,normalizeWindowBounds,windowArguments};

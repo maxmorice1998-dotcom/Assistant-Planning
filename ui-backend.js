@@ -15,8 +15,9 @@ async function waitForBrowserConnection(kind, timeoutMs=240000,windowBounds=null
   last=await manager.status(kind);
   if(last.connected===true){
    if(finishCapture){await finishCapture(true);captureFinished=true;}
+   if(kind==="dendreo")try{await manager.inspect(kind);}catch{}
    // La session est validée : fermeture immédiate de la fenêtre dédiée.
-   Promise.resolve().then(()=>manager.closeDedicated(kind)).catch(()=>{});
+   await manager.closeDedicated(kind);
    return {ok:true,message:kind==="agatt"?"AGATT connecte":"Dendreo connecte",status:last};
   }
   await new Promise(resolve=>setTimeout(resolve,250));
@@ -39,11 +40,11 @@ async function handle(req){
  const cfg=rt.config(),alerts=rt.alert();
   let browserReady=true;try{rt.browserExe();}catch{browserReady=false;}
   const browserManager=require("./browser-manager");
-  let agattStatus=await browserManager.status("agatt");
+  let agattStatus=await browserManager.verifySession("agatt");
   // Une session authentifiée suffit pour découvrir/actualiser l'identifiant
   // AGATT depuis les cellules du planning, sans saisie manuelle.
   if(agattStatus.connected===true&&agattStatus.available!==false){try{await browserManager.inspect("agatt");}catch{} }
-  const dendreoStatus=await require("./browser-manager").status("dendreo");
+  const dendreoStatus=await browserManager.verifySession("dendreo");
   const googleStatus=await require("./google-oauth-v2").status();
   const updateStatus=null;
   return {ok:true,message:"Mode simulation : aucune modification des agendas et aucun mail envoyé.",

@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="Correction du remplacement automatique des versions : le programme de mise à jour travaille désormais hors du dossier installé pour éviter de le verrouiller. La restauration conserve la version existante en cas de problème avant le remplacement. Correction des voyants de connexion : une ancienne session mémorisée ne suffit plus à afficher un voyant vert et Dendreo doit renvoyer une liste valide pour confirmer la connexion. Une installation manuelle de cette version est nécessaire pour corriger le moteur de mise à jour des v41 et v42."
+$notes="Fiabilisation des sessions AGATT et Dendreo : priorité aux onglets authentifiés, vérification en arrière-plan des sessions mémorisées après fermeture du navigateur, réouverture de la fenêtre de connexion après fermeture effective de la session invisible, et distinction entre interruption réseau et reconnexion nécessaire."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
