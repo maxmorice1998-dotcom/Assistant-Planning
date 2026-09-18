@@ -166,7 +166,8 @@ internal sealed class InstallerForm : Form
 
             if (Directory.Exists(destination))
             {
-                Directory.Move(destination, backup);
+                StopInstalledProcesses(destination);
+                MoveOldInstallation(destination, backup);
                 movedOld = true;
             }
             Directory.Move(tempRoot, destination);
@@ -210,6 +211,44 @@ internal sealed class InstallerForm : Form
         finally
         {
             TryDelete(tempRoot);
+        }
+    }
+
+    private static void StopInstalledProcesses(string destination)
+    {
+        string root = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        int self = Process.GetCurrentProcess().Id;
+        foreach (Process process in Process.GetProcesses())
+        {
+            using (process)
+            {
+                try
+                {
+                    if (process.Id == self) continue;
+                    string executable = Path.GetFullPath(process.MainModule.FileName);
+                    if (!executable.StartsWith(root, StringComparison.OrdinalIgnoreCase)) continue;
+                    Log("CLOSE " + executable + " PID=" + process.Id);
+                    if (process.CloseMainWindow() && process.WaitForExit(2000)) continue;
+                    if (!process.HasExited) process.Kill();
+                    if (!process.WaitForExit(5000)) throw new IOException("Un processus de l'ancienne installation ne se ferme pas : " + executable);
+                }
+                catch (System.ComponentModel.Win32Exception) { }
+                catch (InvalidOperationException) { }
+            }
+        }
+    }
+
+    private static void MoveOldInstallation(string destination, string backup)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            try { Directory.Move(destination, backup); return; }
+            catch (IOException) { if (attempt >= 9) throw; }
+            catch (UnauthorizedAccessException error)
+            {
+                if (attempt >= 9) throw new IOException("Windows refuse le remplacement du dossier " + destination + ". Les fichiers de l'ancienne installation ont été conservés. Vérifiez les autorisations du dossier ou le blocage par l'antivirus.", error);
+            }
+            System.Threading.Thread.Sleep(300);
         }
     }
 
