@@ -30,12 +30,17 @@ if(-not $token){throw 'Identifiant GitHub indisponible.'}
 $headers=@{Authorization="Bearer $token";Accept='application/vnd.github+json';'User-Agent'='Assistant-Planning-Publisher'}
 $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
-if($existing){throw "La version $tag existe déjà. Choisir une nouvelle version."}
+if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
+if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
 $notes="Synchronisation automatique silencieuse à chaque ouverture de session Windows. La tâche planifiée est créée ou mise à jour lors de l’installation et de la mise à jour, avec le chemin réel de l’application. Le moteur, les configurations, les logs et l’envoi d’e-mails existants sont réutilisés."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
-$release=Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+if($existing){
+ $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+}else{$release=Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))}
 foreach($file in @($app,$installer,$manifestPath)){
  $name=[IO.Path]::GetFileName($file)
+ $old=$release.assets | Where-Object name -eq $name
+ if($old){Invoke-RestMethod "$api/releases/assets/$($old.id)" -Method Delete -Headers $headers | Out-Null}
  $upload="https://uploads.github.com/repos/$repository/releases/$($release.id)/assets?name=$([Uri]::EscapeDataString($name))"
  $asset=Invoke-RestMethod $upload -Method Post -Headers $headers -ContentType 'application/octet-stream' -InFile $file -TimeoutSec 1800
  if([long]$asset.size -ne (Get-Item $file).Length){throw "Taille distante incorrecte : $name"}

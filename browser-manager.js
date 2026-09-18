@@ -97,7 +97,7 @@ exit 1`;
   const background=options&&options.background===true;
  if(!urls[kind])throw new Error("Connexion inconnue.");rt.initialize();
  if(!background){const locks=require('./operation-lock');for(const name of ['sync.lock','update.lock'])locks.ensureAvailable(rt.dataPath(name),name==='update.lock'?'update':'sync');}
- let existingWindow=background?1:0;
+ let existingWindow=1;
  let reopening=false;
  if(await occupied(rt.ports[kind])){
   rt.verifyBrowser(kind);
