@@ -166,7 +166,8 @@ async function run(options={}){
    await add(label("Simulation Dendreo","Synchronisation Dendreo"),"sync-dendreo.js");
    await add("Contrôle Dendreo","check-dendreo-alerts.js",["after"]);
   }
-  const mailPayload={ok:true,durationMs:results.reduce((n,r)=>n+(Number(r.durationMs)||0),0),changes:results.flatMap(r=>r.changes||[]),summary:summarize(results)};try{fs.writeFileSync(mailResultPath,JSON.stringify(mailPayload),"utf8");}catch{}
+  const calendar=dryRun?null:calendarFromSnapshot(require("./sdis-utils").readExecutionSnapshot());
+  const mailPayload={ok:true,calendar,durationMs:results.reduce((n,r)=>n+(Number(r.durationMs)||0),0),changes:results.flatMap(r=>r.changes||[]),summary:summarize(results)};try{fs.writeFileSync(mailResultPath,JSON.stringify(mailPayload),"utf8");}catch{}
    await add(label("Simulation r\u00E9capitulatif","R\u00E9capitulatif"),"send-combined-alerts.js",["--sync-mail"]);
    let mailStatus={status:"unknown",message:"Mail non envoyé."};try{mailStatus=rt.readJson("mail-status.json",mailStatus);}catch{}
    const mailResult=results[results.length-1];if(mailResult&&mailResult.name===label("Simulation r\u00E9capitulatif","R\u00E9capitulatif")){mailResult.mailStatus=mailStatus.status;mailResult.message=mailStatus.message||mailResult.message;}
@@ -174,7 +175,6 @@ async function run(options={}){
    const report={dryRun,time:new Date().toISOString(),version:appVersion,build:appBuild,executable:appExecutable,results,mailStatus,slowest:results.filter(r=>Number.isFinite(r.durationMs)).sort((a,b)=>b.durationMs-a.durationMs)[0]?.name||"",ok:agatt&&dendreo&&results.every(r=>r.ok),durationMs:results.reduce((n,r)=>n+(Number(r.durationMs)||0),0),summary:summarize(results)};
    emitProgress("complete",100,"Synchronisation terminée",`${(report.durationMs/1000).toFixed(1)} s`,{steps:results.length});
    rt.writeJson("simulation-status.json",report);writeDiagnostic();
-   const calendar=dryRun?null:calendarFromSnapshot(require("./sdis-utils").readExecutionSnapshot());
    return {...report,calendar};
  }catch(error){
   reportUnhandled(error,"synchronisation");
