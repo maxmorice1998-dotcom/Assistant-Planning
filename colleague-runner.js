@@ -113,6 +113,15 @@ async function step(script,args=[],dryRun=true,onChunk=null){
   child.on("close",code=>{clearTimeout(timer);const tailMetrics=extractStepMetrics(metricBuffer);metrics.created+=tailMetrics.created;metrics.removed+=tailMetrics.removed;metrics.unchanged+=tailMetrics.unchanged;changes.push(...extractConfirmedChanges(changeBuffer,script,dryRun));const err=safeTail(stderr),out=safeTail(stdout);resolve({ok:code===0&&!timedOut,message:timedOut?"D\u00E9lai d\u00E9pass\u00E9.":(code===0?"OK":(err||out||"Le moteur a \u00E9chou\u00E9.")),code,stderr:err,stdout:out,metrics,changes,durationMs:Date.now()-startedAt,script,args});});
  });
 }
+function calendarFromSnapshot(snapshot, today=new Date()){
+ const date=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+ const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+ const from=iso(date),source=snapshot?.calendarAfter;
+ if(!source||source.from!==from||!Array.isArray(source.events))return null;
+ date.setDate(date.getDate()+27);const to=iso(date);
+ const events=source.events.map(e=>({...e,dates:Array.isArray(e.dates)?e.dates.filter(d=>d>=from&&d<=to):[]})).filter(e=>e.dates.length);
+ return {ok:true,from,to,events:events.map(e=>({id:e.id,dates:e.dates,text:e.text,startTime:e.startTime,endTime:e.endTime,indispo:e.indispo,botOwned:e.botOwned}))};
+}
 async function run(options={}){
  const dryRun=options.dryRun!==false;
  activeMode=dryRun?"TEST":"SYNCHRONISATION RÉELLE";
@@ -160,7 +169,9 @@ async function run(options={}){
    writeDiagnostic();
    const report={dryRun,time:new Date().toISOString(),version:appVersion,build:appBuild,executable:appExecutable,results,mailStatus,slowest:results.filter(r=>Number.isFinite(r.durationMs)).sort((a,b)=>b.durationMs-a.durationMs)[0]?.name||"",ok:agatt&&dendreo&&results.every(r=>r.ok),durationMs:results.reduce((n,r)=>n+(Number(r.durationMs)||0),0),summary:summarize(results)};
    emitProgress("complete",100,"Synchronisation terminée",`${(report.durationMs/1000).toFixed(1)} s`,{steps:results.length});
-   rt.writeJson("simulation-status.json",report);writeDiagnostic();return report;
+   rt.writeJson("simulation-status.json",report);writeDiagnostic();
+   const calendar=dryRun?null:calendarFromSnapshot(require("./sdis-utils").readExecutionSnapshot());
+   return {...report,calendar};
  }catch(error){
   reportUnhandled(error,"synchronisation");
   results.push({name:"Préparation",ok:false,message:safeMessage(error.message),code:error.code||null});
@@ -180,5 +191,5 @@ async function run(options={}){
    if(!process.env.SDIS_DIAGNOSTIC_NO_WORKER)diagnostic.flushPending();
  }
 }
-module.exports={run,summarize,extractStepMetrics,extractConfirmedChanges,acquireSimulationLock,releaseSimulationLock};
+module.exports={run,calendarFromSnapshot,summarize,extractStepMetrics,extractConfirmedChanges,acquireSimulationLock,releaseSimulationLock};
 if(require.main===module){const dryRun=!process.argv.includes("--real");run({dryRun}).then(r=>{process.stdout.write(JSON.stringify(r));if(!r.ok)process.exitCode=1;}).catch(error=>{console.error(dryRun?"Simulation impossible. Vérifiez les connexions dans l'application.":"Synchronisation impossible : "+safeMessage(error&&error.message));process.exitCode=1;});}

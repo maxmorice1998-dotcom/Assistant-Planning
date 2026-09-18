@@ -494,7 +494,9 @@ async function afterMode() {
   const state = loadState();
   const pre = readFreshSnapshot(BEFORE, DRY_RUN);
   const shared = readExecutionSnapshot();
-  const currentAfter = normalizeEvents(await makeSnapshot());
+  const rawAfter = await makeSnapshot();
+  const currentAfter = normalizeEvents(rawAfter);
+  writeExecutionSnapshot({calendarAfter:{from:isoDate(),events:rawAfter}});
 
   let previous = normalizeEvents(state.events || []);
   let currentBefore = previous;

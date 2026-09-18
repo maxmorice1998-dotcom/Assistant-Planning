@@ -206,14 +206,18 @@ internal sealed class MainForm:Form {
      // statut global et la decouverte d'agentId sont rafraichis en arriere-plan.
      SetBusy(false,"",false);RefreshStatusInBackground();return;
     }
+    if(action=="synchronize")RefreshStatusInBackground();
+    else{
     var refreshed=await Task.Run(()=>Request(new Dictionary<string,object>{{"action","status"}}));
     if(Flag(refreshed,"ok"))ApplyStatus(refreshed);
     else ShowError(Convert.ToString(refreshed["message"]));
+    }
     if(action=="simulate")status.Text=Convert.ToString(response["message"]);
     if(action=="synchronize"){
      status.Text=FormatSyncResult(response);
      try{
-      var calendar=await Task.Run(()=>Request(new Dictionary<string,object>{{"action","dendreo-calendar"}}));
+      var calendar=response.ContainsKey("calendar")?response["calendar"] as Dictionary<string,object>:null;
+      if(!Flag(calendar,"ok"))calendar=await Task.Run(()=>Request(new Dictionary<string,object>{{"action","dendreo-calendar"}}));
       if(Flag(calendar,"ok"))ShowDendreoCalendarScreen(calendar);
       else status.Text+="\nCalendrier Dendreo indisponible.";
      }catch{ShowError("Calendrier Dendreo indisponible. Reessayez la synchronisation.");}
