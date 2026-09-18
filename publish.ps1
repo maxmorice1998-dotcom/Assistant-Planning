@@ -39,7 +39,7 @@ if($existing){
 }else{$release=Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))}
 foreach($file in @($app,$installer,$manifestPath)){
  $name=[IO.Path]::GetFileName($file)
- $old=$release.assets | Where-Object name -eq $name
+ $old=$release.assets | Where-Object {$_.name -eq $name -or $_.name -eq ($name -replace '\s','.')}
  if($old){Invoke-RestMethod "$api/releases/assets/$($old.id)" -Method Delete -Headers $headers | Out-Null}
  $upload="https://uploads.github.com/repos/$repository/releases/$($release.id)/assets?name=$([Uri]::EscapeDataString($name))"
  $responseFile=Join-Path $root '.upload-response.json'
