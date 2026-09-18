@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="Correctif limité des connexions AGATT et Dendreo : priorité aux onglets authentifiés, attente de la fermeture effective du navigateur avant sa réouverture, et distinction entre interruption réseau et reconnexion nécessaire. Aucun contrôle périodique ni réouverture automatique supplémentaire de navigateur."
+$notes="Affichage de la recherche et du telechargement des mises a jour : version cible, progression, volume telecharge et verification avant redemarrage. Nettoyage du verrou apres un echec de telechargement. Aucun controle supplementaire en dehors des mises a jour."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

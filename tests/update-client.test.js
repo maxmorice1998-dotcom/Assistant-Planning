@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test"),assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),{PassThrough}=require("node:stream"),{EventEmitter}=require("node:events");
-function client(routes){
- const calls=[];
+function client(routes,settings={}){
+ const calls=[],progress=[];
  const https={get(url,options,callback){
   const req=new EventEmitter();req.destroy=error=>req.emit("error",error);
   const address=String(url);calls.push(address);
@@ -11,10 +11,10 @@ function client(routes){
    callback(res);res.end(route.body||"");
   });return req;
  }};
- const rt={parseJson:JSON.parse,readProgramJson(name){return name==="app-version.json"?{version:"1.0.39"}:{manifestUrl:"https://github.test/latest"};},dataDir:__dirname,dataPath:name=>path.join(__dirname,name)};
+ const rt={writeJson(name,value){if(name==="update-progress.json")progress.push({...value});},parseJson:JSON.parse,readProgramJson(name){return name==="app-version.json"?{version:"1.0.39"}:{manifestUrl:"https://github.test/latest"};},dataDir:settings.dataDir||__dirname,dataPath:name=>path.join(settings.dataDir||__dirname,name)};
  const module={exports:{}};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,"..","update-client.js"),"utf8"),{module,require:name=>name==="https"?https:name==="./runtime-config"?rt:require(name),URL,Buffer,process,setTimeout,console});
- return {api:module.exports,calls};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,"..","update-client.js"),"utf8"),{module,require:name=>name==="https"?https:name==="./runtime-config"?rt:require(name),URL,Buffer,process,setTimeout:settings.setTimeout||setTimeout,console});
+ return {api:module.exports,calls,progress};
 }
 test("update check follows the GitHub manifest redirects and detects v40",async()=>{
  const {api,calls}=client({
@@ -40,5 +40,19 @@ test("a truncated download fails and removes its incomplete file",async()=>{
  const {api}=client({"https://assets.test/package":{body:"short",headers:{"content-length":"100"}}});
  const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-download-")),file=path.join(dir,"package.zip");
  try{await assert.rejects(api.download("https://assets.test/package",file),/incomplet/);assert.equal(fs.existsSync(file),false);}
+ finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test("download publishes byte progress for the update screen",async()=>{
+ const {api,progress}=client({"https://assets.test/package":{body:"payload",headers:{"content-length":"7"}}});
+ const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-progress-"));
+ try{await api.download("https://assets.test/package",path.join(dir,"package.zip"));assert.equal(progress.at(-1).downloaded,7);assert.equal(progress.at(-1).total,7);assert.ok(Date.parse(progress.at(-1).updatedAt));}
+ finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+
+test("failed integrity verification releases only its update lock",async()=>{
+ const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-update-failure-"));
+ const {api,progress}=client({"https://assets.test/package":{body:"bad package",headers:{"content-length":"11"}}},{dataDir:dir,setTimeout:callback=>callback()});
+ try{await assert.rejects(api.install({available:true,version:"1.0.45",currentVersion:"1.0.44",downloadUrl:"https://assets.test/package",sha256:"a".repeat(64)}),/SHA-256/);assert.equal(fs.existsSync(path.join(dir,"update.lock")),false);assert.match(progress.at(-1).error,/SHA-256/);}
  finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
