@@ -317,8 +317,8 @@ void RefreshStatusInBackground(){
  }
  static bool Flag(Dictionary<string,object> value,string key){return value!=null&&value.ContainsKey(key)&&Convert.ToBoolean(value[key]);}
  bool Badge(Label label,string name,Dictionary<string,object> state){
-  bool connected=Flag(state,"connected");
-  label.Text=connected?"\u2705 "+name+" connect\u00E9":(Flag(state,"temporary")?name+" : reessayez plus tard":(Flag(state,"reconnect")?name+" : reconnexion necessaire":name+" : a connecter"));
+  bool connected=Flag(state,"connected")&&!Flag(state,"temporary");
+  label.Text=connected?"\u2705 "+name+" connect\u00E9":(Flag(state,"temporary")?name+" : connexion a verifier":(Flag(state,"reconnect")?name+" : reconnexion necessaire":name+" : a connecter"));
   label.ForeColor=connected?Color.ForestGreen:Color.DimGray;return connected;
  }
  void ApplyStatus(Dictionary<string,object> response){

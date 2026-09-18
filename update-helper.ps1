@@ -14,15 +14,20 @@ function ReleaseLock(){try{Remove-Item -LiteralPath $UpdateLock -Force -ErrorAct
 function Running([string]$path){$full=[IO.Path]::GetFullPath($path);@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue|Where-Object{$_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath) -eq $full}).Count -gt 0}
 function WaitClosed([string]$path){$end=(Get-Date).AddSeconds(60);while((Get-Date)-lt $end){if(-not(Running $path)){return};Start-Sleep -Milliseconds 250};throw 'Assistant Planning ne s est pas fermé.'}
 function StartChecked([string]$path){$p=Start-Process -FilePath $path -ArgumentList '--skip-update' -WorkingDirectory (Split-Path $path -Parent) -PassThru;Start-Sleep -Seconds 2;if($p.HasExited -and $p.ExitCode -ne 0){throw ('Démarrage échoué (code '+$p.ExitCode+').')}}
-$install=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\');$backup=$install+'.backup';$new=Join-Path $TempRoot 'Assistant Planning';$sw=[Diagnostics.Stopwatch]::StartNew()
+$install=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\');$backup=$install+'.backup-'+[guid]::NewGuid().ToString('N');$new=Join-Path $TempRoot 'Assistant Planning';$sw=[Diagnostics.Stopwatch]::StartNew()
+$movedOld=$false;$installedNew=$false
+$resolvedTemp=[IO.Path]::GetFullPath($TempRoot).TrimEnd('\')
+if($install -eq [IO.Path]::GetPathRoot($install).TrimEnd('\') -or $resolvedTemp -eq [IO.Path]::GetPathRoot($resolvedTemp).TrimEnd('\') -or $install.Equals($resolvedTemp,[StringComparison]::OrdinalIgnoreCase) -or $install.StartsWith($resolvedTemp+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Dossiers de mise à jour incorrects.'}
 try{
+  # Le processus de mise à jour ne doit pas verrouiller le dossier à remplacer.
+  Set-Location -LiteralPath $TempRoot
+  [Environment]::CurrentDirectory=[IO.Path]::GetFullPath($TempRoot)
   New-Item -ItemType Directory -Force -Path $new|Out-Null
   Expand-Archive -LiteralPath $Package -DestinationPath $new -Force
   if(-not(Test-Path (Join-Path $new 'SDIS-Collegues.exe'))){throw 'Package complet incomplet.'}
   WaitClosed $Exe
-  if(Test-Path $backup){Remove-Item $backup -Recurse -Force}
-  if(Test-Path $install){Move-Item $install $backup}
-  Move-Item $new $install
+  if(Test-Path -LiteralPath $install){Move-Item -LiteralPath $install -Destination $backup;$movedOld=$true}
+  Move-Item -LiteralPath $new -Destination $install;$installedNew=$true
   $v=Get-Content (Join-Path $install 'app-version.json') -Raw|ConvertFrom-Json
   if([string]$v.version -ne $ExpectedVersion){throw ('Version installée inattendue : '+$v.version)}
   $taskScript=Join-Path $install 'configure-background-task.ps1'
@@ -33,5 +38,20 @@ try{
   try{Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue}catch{Log 'OK' 'backup conservé temporairement'}
 }catch{
   Log 'ERREUR' $_.Exception.Message
-  try{if(Test-Path $install){Remove-Item $install -Recurse -Force};if(Test-Path $backup){Move-Item $backup $install};if(Test-Path (Join-Path $install 'SDIS-Collegues.exe')){StartChecked (Join-Path $install 'SDIS-Collegues.exe')};Log 'OK' 'rollback restauré'}catch{Log 'ERREUR' ('rollback impossible : '+$_.Exception.Message)}
-}finally{ReleaseLock;try{Remove-Item $TempRoot -Recurse -Force -ErrorAction SilentlyContinue}catch{}}
+  try{
+    if($installedNew -and (Test-Path -LiteralPath $install)){
+      if([IO.Path]::GetFullPath($install) -ne [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')){throw 'Destination de restauration incorrecte.'}
+      Remove-Item -LiteralPath $install -Recurse -Force
+    }
+    if($movedOld){Move-Item -LiteralPath $backup -Destination $install}
+    if(($movedOld -or $installedNew) -and (Test-Path -LiteralPath (Join-Path $install 'SDIS-Collegues.exe'))){StartChecked (Join-Path $install 'SDIS-Collegues.exe')}
+    Log 'OK' 'ancienne installation conservée ou restaurée'
+  }catch{Log 'ERREUR' ('rollback impossible : '+$_.Exception.Message)}
+}finally{
+  ReleaseLock
+  try{
+    Set-Location -LiteralPath $env:TEMP
+    [Environment]::CurrentDirectory=$env:TEMP
+    if([IO.Path]::GetFullPath($TempRoot).TrimEnd('\') -eq $resolvedTemp){Remove-Item -LiteralPath $resolvedTemp -Recurse -Force -ErrorAction SilentlyContinue}
+  }catch{}
+}

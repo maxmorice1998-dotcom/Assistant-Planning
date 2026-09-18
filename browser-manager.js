@@ -12,14 +12,13 @@ function writeConnectionState(kind,connected,reason){
  try{const value=rt.readJson(stateFile,{});value[kind]={connected:Boolean(connected),reason:String(reason||""),at:new Date().toISOString()};rt.writeJson(stateFile,value);}catch{}
 }
 function reportStatus(kind,status){
- const state=readConnectionState(kind);
  if(status.connected===true||status.reconnect===true&&status.reason!=="browser_unavailable")writeConnectionState(kind,status.connected===true,status.reason);
  const cached=readConnectionState(kind);
  if(status.reason==="browser_unavailable"&&cached&&cached.connected===true){
-  status={...status,connected:true,reconnect:false,temporary:true,reason:"browser_closed_last_confirmed"};
+  status={...status,connected:false,reconnect:false,temporary:true,reason:"saved_session_unverified",lastConfirmed:true};
  }
  if(status.temporary===true&&cached&&cached.connected===true){
-  status={...status,connected:true,reconnect:false,reason:status.reason||"temporary_error_last_confirmed"};
+  status={...status,connected:false,reconnect:false,lastConfirmed:true};
  }
  try{const label=kind.toUpperCase();const detail=String(status.reason||"");const line=label+" status -> "+(status.connected===true?"connected":(status.reconnect===true?"disconnected":"unknown"))+(detail?" ("+detail+")":"");rt.initialize();fs.appendFileSync(rt.dataPath("assistant-planning.log"),line+"\n","utf8");}catch{}
  return status;
@@ -205,12 +204,15 @@ foreach($process in Get-CimInstance Win32_Process -Filter "Name='chrome.exe'"){
        let url;
        if(window.config_agenda&&window.config_agenda.events_url)url=new URL(window.config_agenda.events_url,location.href);
        else url=new URL(location.origin+location.pathname.replace(/\/agenda\/?$/,'')+'/events');
+       if(url.origin!==location.origin)return false;
        const now=new Date(),end=new Date(now);end.setDate(end.getDate()+1);
        const iso=d=>d.toISOString().slice(0,10)+'T00:00:00';
        url.search=new URLSearchParams({start:iso(now),end:iso(end),mode:'filter_agenda',agendaType:'agenda_principal',agendaMode:'principal',typeAgendaEvents:'me_or_groups'});
-       const response=await fetch(url,{cache:'no-store',credentials:'same-origin'});
+       const response=await fetch(url,{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(10000)});
        const text=await response.text();
-       return response.ok&&/json/i.test(String(response.headers.get('content-type')||''))&&!/^\s*</.test(text);
+       if(!response.ok||!/json/i.test(String(response.headers.get('content-type')||''))||/^\s*</.test(text))return false;
+       if(response.url&&/\/login(?:\/|$)/i.test(new URL(response.url).pathname))return false;
+       return Array.isArray(JSON.parse(text));
       }catch{return false;}
      });
      if(!api)return reportStatus(kind,{connected:false,reconnect:true,temporary:false,available:true,reason:"api_login_page"});
