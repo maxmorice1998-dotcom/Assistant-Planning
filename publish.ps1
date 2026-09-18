@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="Correction des mises à jour automatiques : recherche au lancement et prise en charge des redirections GitHub pour le manifeste et le téléchargement. Les téléchargements incomplets sont rejetés. Une installation manuelle de cette version est nécessaire pour corriger les anciennes versions qui ne déclenchent pas la mise à jour."
+$notes="Correction des mails multiples lors des synchronisations : les synchronisations manuelles et automatiques ne déclenchent plus les anciens rapports techniques en attente. Seul le récapitulatif de la synchronisation ou son alerte en cas de problème est envoyé. Les anciens rapports restent conservés localement."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

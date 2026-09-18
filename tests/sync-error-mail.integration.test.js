@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,".."),preload=path.join(__dirname,"fixtures","
 test("real processes: three triggers, same failure at +5 min, success, then a new alert",async()=>{
  const dir=fs.mkdtempSync(path.join(root,".mail-integration-"));
  function launch(mode="error",error){
-  const child=spawn(process.execPath,["--require",preload,path.join(root,"background-sync.js")],{cwd:root,windowsHide:true,env:{...process.env,SDIS_COLLEAGUES_TEST_DIR:dir,SDIS_DIAGNOSTIC_NO_WORKER:"1",SDIS_FIXTURE_MODE:mode,...(error?{SDIS_FIXTURE_ERROR:error}:{})},stdio:["ignore","pipe","pipe"]});
+  const child=spawn(process.execPath,["--require",preload,path.join(root,"background-sync.js")],{cwd:root,windowsHide:true,env:{...process.env,SDIS_COLLEAGUES_TEST_DIR:dir,SDIS_FIXTURE_MODE:mode,...(error?{SDIS_FIXTURE_ERROR:error}:{})},stdio:["ignore","pipe","pipe"]});
   let output="";child.stdout.on("data",b=>output+=b);child.stderr.on("data",b=>output+=b);
   const done=new Promise((resolve,reject)=>{child.on("error",reject);child.on("close",code=>resolve({code,output}));});return {child,done};
  }
@@ -29,4 +29,21 @@ test("real processes: three triggers, same failure at +5 min, success, then a ne
   const expired=JSON.parse(fs.readFileSync(statePath,"utf8"));expired.sentAt=new Date(Date.now()-31*60*1000).toISOString();fs.writeFileSync(statePath,JSON.stringify(expired));
   assert.equal((await launch("error","AGATT : HTTP 403").done).code,1);assert.equal(errorCount(),4);
  }finally{assert.equal(path.dirname(path.resolve(dir)),root);fs.rmSync(dir,{recursive:true,force:true});}
+});
+test("manual UI sync sends one recap without dispatching old diagnostic reports",async()=>{
+ const dir=fs.mkdtempSync(path.join(root,".mail-integration-"));
+ const pending=path.join(dir,"diagnostics","pending");fs.mkdirSync(pending,{recursive:true});
+ for(let i=0;i<3;i++)fs.writeFileSync(path.join(pending,`old-v24-${i}.zip`),"old diagnostic");
+ try{
+  const env={...process.env,SDIS_COLLEAGUES_TEST_DIR:dir,SDIS_FIXTURE_MODE:"success"};delete env.SDIS_DIAGNOSTIC_NO_WORKER;
+  const child=spawn(process.execPath,["--require",preload,path.join(root,"ui-backend.js")],{cwd:root,windowsHide:true,env,stdio:["pipe","pipe","pipe"]});
+  let stdout="",stderr="";child.stdout.on("data",b=>stdout+=b);child.stderr.on("data",b=>stderr+=b);
+  const done=new Promise((resolve,reject)=>{child.on("error",reject);child.on("close",resolve);});
+  child.stdin.end(JSON.stringify({action:"synchronize"}));
+  assert.equal(await done,0,stderr);assert.equal(JSON.parse(stdout).ok,true,stdout);
+  const mails=fs.readFileSync(path.join(dir,"captured-mails.jsonl"),"utf8").trim().split("\n").map(JSON.parse);
+  assert.equal(mails.length,1);assert.equal(mails[0].error,false);
+  assert.equal(fs.existsSync(path.join(dir,"unexpected-diagnostics")),false);
+  assert.equal(fs.readdirSync(pending).length,3);
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

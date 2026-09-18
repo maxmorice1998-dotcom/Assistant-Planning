@@ -114,7 +114,6 @@ async function handle(req){
  case "synchronize":{
   try {
    const result=await require("./colleague-runner").run({dryRun:false});
-   if(result.ok)diagnostic.flushPending();
     const mailMessage=result.mailStatus&&result.mailStatus.message?"\n"+result.mailStatus.message:"";return {ok:result.ok,message:result.ok?"Synchronisation terminee."+mailMessage:"Synchronisation interrompue.",results:result.results,durationMs:result.durationMs,summary:result.summary,calendar:result.calendar||null,mailStatus:result.mailStatus||null};
   } catch(error) {
    return {ok:false,message:"Synchronisation impossible : "+safeDiagnostic(error&&error.message),results:[]};

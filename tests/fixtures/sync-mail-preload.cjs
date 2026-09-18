@@ -22,7 +22,7 @@ Module._load=function(request,parent,isMain){
  if(request==="./google-oauth-v2")return oauth;
  if(request==="./browser-manager")return browser;
  if(request==="./sdis-utils")return {readExecutionSnapshot:()=>null};
- if(request==="./diagnostic-report")return {safeMessage:e=>String(e.message||e),reportError:()=>{fs.appendFileSync(rt.dataPath("unexpected-diagnostics"),"unexpected\n");}};
+ if(request==="./diagnostic-report")return {safeMessage:e=>String(e.message||e),reportError:()=>{fs.appendFileSync(rt.dataPath("unexpected-diagnostics"),"unexpected\n");},flushPending:()=>{fs.appendFileSync(rt.dataPath("unexpected-diagnostics"),"pending reports dispatched\n");}};
  return originalLoad.call(this,request,parent,isMain);
 };
 childProcess.spawn=function(exe,args,options){

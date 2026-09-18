@@ -196,7 +196,6 @@ async function run(options={}){
   if(executionCachePath){try{fs.unlinkSync(executionCachePath);}catch{} }
   executionCachePath="";mailResultPath="";progressPath="";
    progressMode="test";
-   if(!process.env.SDIS_DIAGNOSTIC_NO_WORKER)diagnostic.flushPending();
  }
 }
 module.exports={run,calendarFromSnapshot,summarize,extractStepMetrics,extractConfirmedChanges,acquireSimulationLock,releaseSimulationLock};
