@@ -44,6 +44,11 @@ function initialize(){
    writeJson(name,fs.existsSync(defaults)?parseJson(fs.readFileSync(defaults,"utf8")):{});
   }
  }
+ const dendreo=readJson("dendreo-config.json",{});let dendreoChanged=false;
+ if(!String(dendreo.marker||"").trim()){dendreo.marker="[SDIS-BOT]";dendreoChanged=true;}
+ if(!String(dendreo.label||"").trim()){dendreo.label="Garde SDIS";dendreoChanged=true;}
+ if(!Number.isFinite(Number(dendreo.monthsAhead))||Number(dendreo.monthsAhead)<=0){dendreo.monthsAhead=6;dendreoChanged=true;}
+ if(dendreoChanged)writeJson("dendreo-config.json",dendreo);
  // Le mode d'exécution est choisi explicitement par l'appelant (--dry-run ou --real).
  // Ne jamais modifier ici la configuration persistée pour imposer un mode global.
  fs.mkdirSync(path.join(dataDir,"secrets"),{recursive:true});

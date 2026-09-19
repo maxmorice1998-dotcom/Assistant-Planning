@@ -89,7 +89,8 @@ internal sealed class MainForm:Form {
  bool syncProgressMode;
  bool updateProgressMode;
  public MainForm(bool skipUpdate=false){
- Text="Assistant Planning";ClientSize=new Size(640,800);MinimumSize=new Size(656,839);AutoScroll=false;
+  int designHeight=800,availableHeight=Math.Max(640,Screen.PrimaryScreen.WorkingArea.Height-40),targetHeight=Math.Min(designHeight,availableHeight);
+  Text="Assistant Planning";ClientSize=new Size(640,targetHeight);MinimumSize=new Size(656,targetHeight+39);AutoScroll=false;
   try{string iconPath=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"assets","assistant-planning.ico");if(File.Exists(iconPath))Icon=new Icon(iconPath);}catch{}
   StartPosition=FormStartPosition.CenterScreen;Font=new Font("Segoe UI",11);BackColor=Color.FromArgb(250,250,249);
   Panel header=new Panel{Bounds=new Rectangle(0,0,640,126),Anchor=AnchorStyles.Top|AnchorStyles.Left|AnchorStyles.Right,BackColor=Color.White};Controls.Add(header);
@@ -125,6 +126,7 @@ internal sealed class MainForm:Form {
    busyTimer.Interval=120;busyTimer.Tick+=(s,e)=>{string[] frames={"|","/","-","\\"};int n=busyTimer.Tag==null?0:(int)busyTimer.Tag;n=(n+1)%frames.Length;busyTimer.Tag=n;busySpinner.Text=frames[n];};
    progressTimer.Interval=150;progressTimer.Tick+=(s,e)=>PollProgress();
   // Les mises à jour passent par le même backend que les autres actions.
+  if(targetHeight<designHeight)ScaleVertical(Controls,(float)targetHeight/designHeight);
   Shown+=(s,e)=>{WindowState=FormWindowState.Normal;Show();Activate();BringToFront();if(skipUpdate)RefreshStatusInBackground();else Call("startup");};
   FormClosing+=(s,e)=>{busy=false;busyTimer.Stop();progressTimer.Stop();try{if(activeRequest!=null&&!activeRequest.HasExited)activeRequest.Kill();}catch{}};
  }
@@ -172,6 +174,13 @@ internal sealed class MainForm:Form {
    if(process.ExitCode!=0)throw new Exception("Le programme est incomplet ou indisponible.");
    return json.Deserialize<Dictionary<string,object>>(output.Result);
    } finally {if(Object.ReferenceEquals(activeRequest,process))activeRequest=null;}
+  }
+ }
+ static void ScaleVertical(Control.ControlCollection controls,float factor){
+  foreach(Control control in controls){
+   Rectangle bounds=control.Bounds;
+   control.SetBounds(bounds.X,(int)Math.Round(bounds.Y*factor),bounds.Width,Math.Max(1,(int)Math.Round(bounds.Height*factor)));
+   if(control.HasChildren)ScaleVertical(control.Controls,factor);
   }
  }
  void ReportClientException(string action,string message){
