@@ -19,4 +19,6 @@ try {
 if($LASTEXITCODE -ne 0){throw 'Compilation impossible.'}
 & $compiler /nologo /target:exe /platform:x64 /optimize+ /codepage:65001 /reference:System.Security.dll /out:"$OutputRoot\SDIS-Collegues-Bridge.exe" "$PSScriptRoot\SDIS-Collegues-Bridge.cs" $assemblyInfo
 if($LASTEXITCODE -ne 0){throw 'Compilation du pont DPAPI impossible.'}
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 /out:"$OutputRoot\AssistantPlanning-UpdateLauncher.exe" "$PSScriptRoot\AssistantPlanning-UpdateLauncher.cs" $assemblyInfo
+if($LASTEXITCODE -ne 0){throw 'Compilation du lanceur de mise a jour impossible.'}
 } finally { Remove-Item -LiteralPath $assemblyInfo -Force -ErrorAction SilentlyContinue }
