@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -15,6 +16,7 @@ internal sealed class InstallerForm : Form
     private readonly Timer busyTimer = new Timer();
     private static readonly string InstallLog = Path.Combine(Path.GetTempPath(), "Assistant-Planning-install-" + Process.GetCurrentProcess().Id + ".log");
     private static void Log(string message) { try { File.AppendAllText(InstallLog, DateTime.UtcNow.ToString("o") + " " + message + Environment.NewLine, new UTF8Encoding(false)); } catch { } }
+    private static Image LoadLogo() { try { using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("udsp14-logo.png")) { return stream == null ? null : new Bitmap(Image.FromStream(stream)); } } catch { return null; } }
 
     public InstallerForm()
     {
@@ -31,7 +33,7 @@ internal sealed class InstallerForm : Form
         Panel header = new Panel { Bounds = new Rectangle(0, 0, 640, 126), BackColor = Color.White };
         Controls.Add(header);
         header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 4, BackColor = Color.FromArgb(232, 35, 42) });
-        header.Controls.Add(new Label { Text = "AP", Bounds = new Rectangle(26, 18, 92, 88), BackColor = Color.FromArgb(3, 46, 66), ForeColor = Color.White, Font = new Font("Segoe UI", 27F, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter });
+        header.Controls.Add(new PictureBox { Image = LoadLogo(), Bounds = new Rectangle(26, 18, 92, 88), SizeMode = PictureBoxSizeMode.Zoom, BackColor = Color.Transparent });
         header.Controls.Add(new Label { Text = "UDSP 14", Font = new Font("Segoe UI", 12F, FontStyle.Bold), ForeColor = Color.FromArgb(3, 46, 66), AutoSize = true, Location = new Point(140, 22) });
         header.Controls.Add(new Label { Text = "Service Formation", Font = new Font("Segoe UI", 10F), ForeColor = Color.FromArgb(94, 107, 113), AutoSize = true, Location = new Point(141, 47) });
         header.Controls.Add(new Label { Text = "Assistant Planning", Font = new Font("Segoe UI", 25F, FontStyle.Bold), ForeColor = Color.FromArgb(3, 46, 66), AutoSize = true, Location = new Point(138, 63) });
