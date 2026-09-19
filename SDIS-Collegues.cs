@@ -257,7 +257,6 @@ void RefreshStatusInBackground(){
      SetBusy(false,"",false);
      if(t.Status==TaskStatus.RanToCompletion&&Flag(t.Result,"ok")){
       status.Text=Convert.ToString(t.Result["message"])+(value?" Les repos seront créés à la prochaine synchronisation.":" Les repos bot seront retirés à la prochaine synchronisation.");
-      RefreshStatusInBackground();
      }else{
       updatingRepos=true;reposCheck.Checked=!value;updatingRepos=false;
       ShowError(t.Status==TaskStatus.RanToCompletion?Convert.ToString(t.Result["message"]):"Repos compensatoire : enregistrement impossible.");
