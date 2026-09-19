@@ -1,10 +1,10 @@
 {
-    "version":  "1.0.49",
+    "version":  "1.0.50",
     "channel":  "stable",
     "app":  {
-                "version":  "1.0.49",
-                "url":  "https://github.com/maxmorice1998-dotcom/Assistant-Planning/releases/download/v1.0.49/AssistantPlanning-app.zip",
-                "sha256":  "6721a12732ca98a63faa34f9654e40c8118c6df221fa4a06ffca29352542730e",
-                "size":  253534681
+                "version":  "1.0.50",
+                "url":  "https://github.com/maxmorice1998-dotcom/Assistant-Planning/releases/download/v1.0.50/AssistantPlanning-app.zip",
+                "sha256":  "5ef3e290b479c17a79a4645f3f0a2789d6e9949e193a62f868f40ad9345fa722",
+                "size":  253534675
             }
 }
