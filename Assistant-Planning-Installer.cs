@@ -11,39 +11,57 @@ internal sealed class InstallerForm : Form
 {
     private readonly Label status = new Label();
     private readonly ProgressBar progress = new ProgressBar();
+    private readonly Label spinner = new Label();
+    private readonly Timer busyTimer = new Timer();
     private static readonly string InstallLog = Path.Combine(Path.GetTempPath(), "Assistant-Planning-install-" + Process.GetCurrentProcess().Id + ".log");
     private static void Log(string message) { try { File.AppendAllText(InstallLog, DateTime.UtcNow.ToString("o") + " " + message + Environment.NewLine, new UTF8Encoding(false)); } catch { } }
 
     public InstallerForm()
     {
-        Text = "Installation Assistant Planning v" + FileVersionInfo.GetVersionInfo(Process.GetCurrentProcess().MainModule.FileName).ProductVersion;
-        ClientSize = new Size(560, 190);
-        MinimumSize = new Size(560, 190);
-        MaximumSize = new Size(560, 190);
+        string version = FileVersionInfo.GetVersionInfo(Process.GetCurrentProcess().MainModule.FileName).ProductVersion;
+        Text = "Assistant Planning - Installation";
+        ClientSize = new Size(640, 800);
+        MinimumSize = new Size(656, 839);
+        MaximumSize = new Size(656, 839);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = Color.White;
-        Font = new Font("Segoe UI", 10F);
+        BackColor = Color.FromArgb(250, 250, 249);
+        Font = new Font("Segoe UI", 11F);
+        try { Icon = Icon.ExtractAssociatedIcon(Process.GetCurrentProcess().MainModule.FileName); } catch { }
 
-        Controls.Add(new Label {
-            Text = "Assistant Planning",
-            AutoSize = true,
-            Location = new Point(30, 24),
-            Font = new Font("Segoe UI", 20F, FontStyle.Bold),
-            ForeColor = Color.FromArgb(3, 46, 66)
-        });
-        Controls.Add(new Label {
-            Text = "Installation pour ce compte Windows",
-            AutoSize = true,
-            Location = new Point(33, 66),
-            ForeColor = Color.FromArgb(94, 107, 113)
-        });
-        status.SetBounds(33, 103, 490, 25);
-        status.Text = "Préparation de l'installation… Les composants vont être installés automatiquement.";
-        Controls.Add(status);
-        progress.SetBounds(33, 135, 490, 18);
+        Panel header = new Panel { Bounds = new Rectangle(0, 0, 640, 126), BackColor = Color.White };
+        Controls.Add(header);
+        header.Controls.Add(new Panel { Dock = DockStyle.Bottom, Height = 4, BackColor = Color.FromArgb(232, 35, 42) });
+        header.Controls.Add(new Label { Text = "AP", Bounds = new Rectangle(26, 18, 92, 88), BackColor = Color.FromArgb(3, 46, 66), ForeColor = Color.White, Font = new Font("Segoe UI", 27F, FontStyle.Bold), TextAlign = ContentAlignment.MiddleCenter });
+        header.Controls.Add(new Label { Text = "UDSP 14", Font = new Font("Segoe UI", 12F, FontStyle.Bold), ForeColor = Color.FromArgb(3, 46, 66), AutoSize = true, Location = new Point(140, 22) });
+        header.Controls.Add(new Label { Text = "Service Formation", Font = new Font("Segoe UI", 10F), ForeColor = Color.FromArgb(94, 107, 113), AutoSize = true, Location = new Point(141, 47) });
+        header.Controls.Add(new Label { Text = "Assistant Planning", Font = new Font("Segoe UI", 25F, FontStyle.Bold), ForeColor = Color.FromArgb(3, 46, 66), AutoSize = true, Location = new Point(138, 63) });
+
+        Controls.Add(new Label { Text = "Installation d'Assistant Planning", Bounds = new Rectangle(34, 148, 570, 32), ForeColor = Color.FromArgb(3, 46, 66), Font = new Font("Segoe UI", 11F, FontStyle.Bold) });
+        Panel busyPanel = new Panel { Bounds = new Rectangle(34, 190, 570, 340), BackColor = Color.FromArgb(250, 250, 249) };
+        Controls.Add(busyPanel);
+        spinner.SetBounds(235, 62, 100, 70);
+        spinner.Font = new Font("Segoe UI", 36F);
+        spinner.ForeColor = Color.FromArgb(232, 35, 42);
+        spinner.Text = "|";
+        spinner.TextAlign = ContentAlignment.MiddleCenter;
+        busyPanel.Controls.Add(spinner);
+        Label title = new Label { Text = "Installation en cours — v" + version, Bounds = new Rectangle(40, 140, 490, 42), Font = new Font("Segoe UI", 12F, FontStyle.Bold), ForeColor = Color.FromArgb(3, 46, 66), TextAlign = ContentAlignment.MiddleCenter };
+        busyPanel.Controls.Add(title);
+        status.SetBounds(40, 194, 490, 30);
+        status.Text = "Préparation des composants";
+        status.ForeColor = Color.FromArgb(3, 46, 66);
+        status.TextAlign = ContentAlignment.MiddleCenter;
+        busyPanel.Controls.Add(status);
+        progress.SetBounds(70, 245, 430, 18);
         progress.Style = ProgressBarStyle.Marquee;
         progress.MarqueeAnimationSpeed = 25;
-        Controls.Add(progress);
+        busyPanel.Controls.Add(progress);
+        busyPanel.Controls.Add(new Label { Text = "Merci de patienter. Ne fermez pas Assistant Planning.", Bounds = new Rectangle(15, 282, 540, 38), ForeColor = Color.FromArgb(120, 128, 132), Font = new Font("Segoe UI", 9F), TextAlign = ContentAlignment.MiddleCenter });
+        Controls.Add(new Label { Text = "Installation sécurisée pour ce compte Windows", Bounds = new Rectangle(34, 612, 570, 28), ForeColor = Color.FromArgb(94, 107, 113), TextAlign = ContentAlignment.MiddleCenter });
+        Controls.Add(new Label { Text = "Assistant Planning - v" + version, Bounds = new Rectangle(34, 760, 570, 24), ForeColor = Color.FromArgb(120, 128, 132), Font = new Font("Segoe UI", 9F) });
+        busyTimer.Interval = 120;
+        busyTimer.Tick += (s, e) => { string[] frames = { "|", "/", "-", "\\" }; int index = busyTimer.Tag == null ? 0 : (int)busyTimer.Tag; index = (index + 1) % frames.Length; busyTimer.Tag = index; spinner.Text = frames[index]; };
+        busyTimer.Start();
         Shown += BeginInstall;
     }
 
@@ -61,6 +79,7 @@ internal sealed class InstallerForm : Form
         }
         catch (Exception error)
         {
+            busyTimer.Stop();
             Environment.ExitCode = 1;
             Log(error.ToString());
             progress.Style = ProgressBarStyle.Continuous;

@@ -33,10 +33,13 @@ function StartChecked([string]$path){$p=Start-Process -FilePath $path -ArgumentL
 $install=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\');$backup=$install+'.backup-'+[guid]::NewGuid().ToString('N');$new=Join-Path $TempRoot 'Assistant Planning';$sw=[Diagnostics.Stopwatch]::StartNew()
 $movedOld=$false;$installedNew=$false
 $resolvedTemp=[IO.Path]::GetFullPath($TempRoot).TrimEnd('\')
+$progressDone=Join-Path $TempRoot 'update-finished'
+$progressScript=Join-Path $TempRoot 'update-progress-window.ps1'
 if($install -eq [IO.Path]::GetPathRoot($install).TrimEnd('\') -or $resolvedTemp -eq [IO.Path]::GetPathRoot($resolvedTemp).TrimEnd('\') -or $install.Equals($resolvedTemp,[StringComparison]::OrdinalIgnoreCase) -or $install.StartsWith($resolvedTemp+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Dossiers de mise a jour incorrects.'}
 try{
   Set-Location -LiteralPath $TempRoot
   [Environment]::CurrentDirectory=[IO.Path]::GetFullPath($TempRoot)
+  if(Test-Path -LiteralPath $progressScript){try{Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$progressScript,'-DoneFile',$progressDone,'-Version',$ExpectedVersion) -WindowStyle Hidden|Out-Null}catch{}}
   New-Item -ItemType Directory -Force -Path $new|Out-Null
   Log 'OK' ('extraction package '+$ExpectedVersion)
   Expand-Archive -LiteralPath $Package -DestinationPath $new -Force
@@ -68,6 +71,7 @@ try{
     Log 'OK' 'ancienne installation conservee ou restauree'
   }catch{Log 'ERREUR' ('rollback impossible : '+$_.Exception.Message)}
 }finally{
+  try{[IO.File]::WriteAllText($progressDone,'done')}catch{}
   ReleaseLock
   try{
     Set-Location -LiteralPath $env:TEMP
