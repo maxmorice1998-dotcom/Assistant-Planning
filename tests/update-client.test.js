@@ -52,7 +52,15 @@ test("download publishes byte progress for the update screen",async()=>{
 
 test("failed integrity verification releases only its update lock",async()=>{
  const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-update-failure-"));
+ fs.writeFileSync(path.join(dir,"update.lock"),JSON.stringify({pid:99999999,type:"update"}));
  const {api,progress}=client({"https://assets.test/package":{body:"bad package",headers:{"content-length":"11"}}},{dataDir:dir,setTimeout:callback=>callback()});
  try{await assert.rejects(api.install({available:true,version:"1.0.45",currentVersion:"1.0.44",downloadUrl:"https://assets.test/package",sha256:"a".repeat(64)}),/SHA-256/);assert.equal(fs.existsSync(path.join(dir,"update.lock")),false);assert.match(progress.at(-1).error,/SHA-256/);}
+ finally{fs.rmSync(dir,{recursive:true,force:true});}
+});
+test("an active updater lock is preserved",async()=>{
+ const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-update-lock-"));
+ const lock=path.join(dir,"update.lock");fs.writeFileSync(lock,JSON.stringify({pid:process.pid,type:"update"}));
+ const {api}=client({}, {dataDir:dir});
+ try{await assert.rejects(api.install({available:true,version:"1.0.45",downloadUrl:"https://assets.test/package",sha256:"a".repeat(64)}),/déjà en cours/);assert.equal(fs.existsSync(lock),true);}
  finally{fs.rmSync(dir,{recursive:true,force:true});}
 });
