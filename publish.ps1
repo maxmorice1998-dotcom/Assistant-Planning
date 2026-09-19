@@ -32,7 +32,7 @@ $api="https://api.github.com/repos/$repository"
 try {$existing=Invoke-RestMethod "$api/releases/tags/$tag" -Headers $headers} catch {if($_.Exception.Response.StatusCode.value__ -ne 404){throw};$existing=$null}
 if(-not $existing){$existing=Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers | Where-Object tag_name -eq $tag | Select-Object -First 1}
 if($existing -and -not $existing.draft){throw "La version $tag existe déjà. Choisir une nouvelle version."}
-$notes="Une relance pendant une installation en cours se ferme automatiquement afin de laisser l'installateur terminer, sans second telechargement. Le verrou est rattache au vrai processus et tout verrou abandonne est supprime immediatement. Inclut le correctif du repos compensatoire de la v1.0.46."
+$notes="Apres une connexion AGATT ou Dendreo confirmee, l'interface conserve les deux voyants verts. Le controle global inutile qui faisait alterner 'connexion a verifier' entre les deux services a ete retire."
 $body=@{tag_name=$tag;name="Assistant Planning $tag";target_commitish=(git rev-parse HEAD).Trim();draft=$true;body=$notes} | ConvertTo-Json
 if($existing){
  $release=Invoke-RestMethod "$api/releases/$($existing.id)" -Method Patch -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))

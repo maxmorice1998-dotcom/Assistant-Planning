@@ -216,9 +216,10 @@ internal sealed class MainForm:Form {
     if(action=="open-agatt"){agattBadge.Text="\u2705 AGATT connect\u00E9";agattBadge.ForeColor=Color.ForestGreen;}
     if(action=="open-dendreo"){dendreoBadge.Text="\u2705 Dendreo connect\u00E9";dendreoBadge.ForeColor=Color.ForestGreen;status.Text="\u2705 Dendreo connect\u00E9";}
     if(action=="google"||action=="open-agatt"||action=="open-dendreo"){
-     // La confirmation de connexion libere immediatement l'interface. Le
-     // statut global et la decouverte d'agentId sont rafraichis en arriere-plan.
-     SetBusy(false,"",false);RefreshStatusInBackground();return;
+     // La connexion vient d'être vérifiée par l'action elle-même. Un nouveau
+     // contrôle global rétrograderait inutilement l'autre session sauvegardée.
+     summary.Text=googleBadge.ForeColor==Color.ForestGreen&&agattBadge.ForeColor==Color.ForestGreen&&dendreoBadge.ForeColor==Color.ForestGreen?"":"Connectez vos trois services pour commencer.";
+     SetBusy(false,"",false);return;
     }
     if(action=="synchronize")RefreshStatusInBackground();
     else{
