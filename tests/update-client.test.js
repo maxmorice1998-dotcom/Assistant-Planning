@@ -61,6 +61,6 @@ test("an active updater lock is preserved",async()=>{
  const dir=fs.mkdtempSync(path.join(__dirname,"..",".installer-test-update-lock-"));
  const lock=path.join(dir,"update.lock");fs.writeFileSync(lock,JSON.stringify({pid:process.pid,type:"update"}));
  const {api}=client({}, {dataDir:dir});
- try{await assert.rejects(api.install({available:true,version:"1.0.45",downloadUrl:"https://assets.test/package",sha256:"a".repeat(64)}),/déjà en cours/);assert.equal(fs.existsSync(lock),true);}
+ try{assert.equal(api.updateInProgress(),true);await assert.rejects(api.install({available:true,version:"1.0.45",downloadUrl:"https://assets.test/package",sha256:"a".repeat(64)}),/déjà en cours/);assert.equal(fs.existsSync(lock),true);}
  finally{fs.rmSync(dir,{recursive:true,force:true});}
 });

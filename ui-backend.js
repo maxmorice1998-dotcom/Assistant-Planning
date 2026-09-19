@@ -55,11 +55,13 @@ async function handle(req){
  case "startup":{
   try{
    const updater=require("./update-client");
+   if(updater.updateInProgress())return {ok:true,updated:true,existingUpdate:true,warning:false,message:"Mise à jour déjà en cours. Assistant Planning va se fermer et redémarrera automatiquement."};
    const info=await updater.check();
    if(!info.available)return {ok:true,updated:false,warning:!!info.temporary,message:""};
    const result=await updater.install(info);
    return {ok:true,updated:!!result.started,warning:false,message:"Mise à jour d'Assistant Planning…"};
   }catch(error){
+   if(String(error&&error.message||"").includes("déjà en cours"))return {ok:true,updated:true,existingUpdate:true,warning:false,message:"Mise à jour déjà en cours. Assistant Planning va se fermer et redémarrera automatiquement."};
    return {ok:true,updated:false,warning:true,message:"⚠ Mise à jour impossible — version actuelle conservée"};
   }
  }
