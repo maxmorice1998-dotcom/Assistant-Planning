@@ -32,7 +32,10 @@ try{
   if([string]$v.version -ne $ExpectedVersion){throw ('Version installée inattendue : '+$v.version)}
   $taskScript=Join-Path $install 'configure-background-task.ps1'
   if(-not(Test-Path -LiteralPath $taskScript)){throw 'Configuration du démarrage automatique absente.'}
-  & $taskScript -InstallRoot $install
+  # La tache planifiee est un service annexe. Un refus du Planificateur ne
+  # doit pas annuler une application deja remplacee et valide, sinon la meme
+  # mise a jour est reproposee puis rollbackee a chaque demarrage.
+  try{& $taskScript -InstallRoot $install}catch{Log 'AVERTISSEMENT' ('demarrage automatique non reconfigure : '+$_.Exception.Message)}
   StartChecked (Join-Path $install 'SDIS-Collegues.exe')
   Log 'OK' ('installation '+$ExpectedVersion+' et redémarrage réussis en '+[math]::Round($sw.Elapsed.TotalSeconds,1)+' s')
   try{Remove-Item $backup -Recurse -Force -ErrorAction SilentlyContinue}catch{Log 'OK' 'backup conservé temporairement'}

@@ -30,12 +30,16 @@ function RunCase([string]$name,[bool]$failTask){
  $start.Arguments='-NoProfile -ExecutionPolicy Bypass -File "'+(Join-Path $root 'update-helper.ps1')+'" -Package "'+$zip+'" -InstallRoot "'+$install+'" -Exe "'+(Join-Path $install 'SDIS-Collegues.exe')+'" -UpdateLock "'+$lock+'" -ExpectedVersion 1.0.43 -TempRoot "'+$temp+'"'
  $start.WorkingDirectory=$install;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
  $process=[Diagnostics.Process]::Start($start)
- if(-not $process.WaitForExit(20000)){throw 'Timeout du test de mise à jour.'}
+ if(-not $process.WaitForExit(20000)){throw 'Timeout du test de mise a jour.'}
  $process.Dispose()
- if(Test-Path -LiteralPath $lock){throw 'Verrou non libéré.'}
- if($failTask){if([IO.File]::ReadAllText((Join-Path $install 'old.txt')) -ne 'original preserved'){throw 'Ancienne installation perdue.'}}
- else{if((Get-Content (Join-Path $install 'app-version.json') -Raw|ConvertFrom-Json).version -ne '1.0.43'){throw 'Version non remplacée.'}}
+ if(Test-Path -LiteralPath $lock){throw 'Verrou non libere.'}
+ if((Get-Content (Join-Path $install 'app-version.json') -Raw|ConvertFrom-Json).version -ne '1.0.43'){throw 'Version non remplacee.'}
+ if($failTask){
+  if(Test-Path (Join-Path $install 'old.txt')){throw 'Rollback incorrect apres un echec non bloquant de la tache planifiee.'}
+  $caseLog=Get-Content (Join-Path $testRoot 'assistant-planning.log') -Raw
+  if($caseLog -notmatch 'AVERTISSEMENT.*demarrage automatique non reconfigure'){throw 'Avertissement de tache planifiee absent.'}
+ }
  Write-Output ('PASS: '+$name)
 }
 RunCase 'replace-from-locked-working-directory' $false
-RunCase 'rollback-after-task-failure' $true
+RunCase 'keep-update-after-task-failure' $true
