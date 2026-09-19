@@ -143,7 +143,7 @@ async function run(options={}){
   executionCachePath=rt.dataPath(`.assistant-planning-run-${runId}.json`);
   mailResultPath=rt.dataPath(`.assistant-planning-mail-${runId}.json`);
   progressPath=rt.dataPath("sync-progress.json");
-  emitProgress("preparation",0,"Préparation de la synchronisation","Vérification des connexions…");
+  emitProgress("preparation",5,"Préparation de la synchronisation","Vérification des connexions…");
   process.env.SDIS_RUN_ID=runId;
   process.env.SDIS_RUN_CACHE=executionCachePath;
   try{fs.unlinkSync(executionCachePath);}catch{}
