@@ -125,7 +125,7 @@ internal sealed class MainForm:Form {
    busyTimer.Interval=120;busyTimer.Tick+=(s,e)=>{string[] frames={"|","/","-","\\"};int n=busyTimer.Tag==null?0:(int)busyTimer.Tag;n=(n+1)%frames.Length;busyTimer.Tag=n;busySpinner.Text=frames[n];};
    progressTimer.Interval=150;progressTimer.Tick+=(s,e)=>PollProgress();
   // Les mises à jour passent par le même backend que les autres actions.
-  Shown+=(s,e)=>{if(skipUpdate)RefreshStatusInBackground();else Call("startup");};
+  Shown+=(s,e)=>{WindowState=FormWindowState.Normal;Show();Activate();BringToFront();if(skipUpdate)RefreshStatusInBackground();else Call("startup");};
   FormClosing+=(s,e)=>{busy=false;busyTimer.Stop();progressTimer.Stop();try{if(activeRequest!=null&&!activeRequest.HasExited)activeRequest.Kill();}catch{}};
  }
  string BuildLabel(){

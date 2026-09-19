@@ -29,7 +29,7 @@ function CloseProgramProcesses([string]$root){
   }while((Get-Date)-lt $end)
   throw 'Des processus Assistant Planning bloquent encore la mise a jour.'
 }
-function StartChecked([string]$path){$p=Start-Process -FilePath $path -ArgumentList '--skip-update' -WorkingDirectory (Split-Path $path -Parent) -PassThru;Start-Sleep -Seconds 2;if($p.HasExited -and $p.ExitCode -ne 0){throw ('Demarrage echoue (code '+$p.ExitCode+').')}}
+function StartChecked([string]$path){$p=Start-Process -FilePath $path -ArgumentList '--skip-update' -WorkingDirectory (Split-Path $path -Parent) -WindowStyle Normal -PassThru;Start-Sleep -Seconds 2;if($p.HasExited -and $p.ExitCode -ne 0){throw ('Demarrage echoue (code '+$p.ExitCode+').')}}
 $install=[IO.Path]::GetFullPath($InstallRoot).TrimEnd('\');$backup=$install+'.backup-'+[guid]::NewGuid().ToString('N');$new=Join-Path $TempRoot 'Assistant Planning';$sw=[Diagnostics.Stopwatch]::StartNew()
 $movedOld=$false;$installedNew=$false
 $resolvedTemp=[IO.Path]::GetFullPath($TempRoot).TrimEnd('\')
